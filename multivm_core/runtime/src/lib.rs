@@ -1,0 +1,136 @@
+use std::collections::HashMap;
+
+use block::UnprovedBlock;
+use bootstraper::Bootstraper;
+use multivm_primitives::{Block, ContractCallContext, SignedTransaction};
+use tracing::{debug, info};
+use viewer::Viewer;
+
+pub mod block;
+pub mod bootstraper;
+pub mod context;
+pub mod executor;
+pub mod outcome;
+pub mod utils;
+pub mod viewer;
+
+pub struct MultivmNode {
+    db: sled::Db,
+    txs_pool: std::collections::VecDeque<SignedTransaction>,
+}
+
+impl MultivmNode {
+    pub fn new(db_path: String) -> Self {
+        debug!(db_path, "Starting node");
+        Self {
+            db: sled::open(db_path).unwrap(),
+            txs_pool: std::collections::VecDeque::new(),
+        }
+    }
+
+    pub fn init_genesis(&mut self) {
+        let genesis_block = Block {
+            height: 1,
+            hash: [0; 32],
+            parent_hash: [0; 32],
+            previous_global_root: Default::default(),
+            new_global_root: Default::default(),
+            timestamp: 0,
+            txs: Default::default(),
+            call_outputs: Default::default(),
+        };
+
+        self.insert_block(genesis_block);
+    }
+
+    fn insert_block(&mut self, block: Block) {
+        self.db
+            .insert(
+                format!("block_{}", block.height),
+                borsh::to_vec(&block).unwrap(),
+            )
+            .unwrap();
+
+        self.db
+            .insert(b"latest_block", borsh::to_vec(&block).unwrap())
+            .unwrap();
+    }
+
+    pub fn block_by_height(&self, height: u64) -> Option<Block> {
+        let block = self
+            .db
+            .get(format!("block_{}", height))
+            .unwrap()
+            .map(|bytes| borsh::from_slice(&mut bytes.to_vec()).unwrap());
+
+        block
+    }
+
+    pub fn latest_block(&self) -> Block {
+        let mut latest_block_bytes = self.db.get(b"latest_block").unwrap().unwrap().to_vec();
+        let latest_block: Block = borsh::from_slice(&mut latest_block_bytes).unwrap();
+
+        latest_block
+    }
+
+    pub fn add_tx(&mut self, tx: SignedTransaction) {
+        self.txs_pool.push_back(tx);
+    }
+
+    pub fn produce_block(&mut self, skip_proof: bool) -> Block {
+        let latest_block = self.latest_block();
+        info!(height = latest_block.height + 1, "Creating new block");
+        let start: std::time::Instant = std::time::Instant::now();
+        // self.txs_pool = Default::default();
+        let (txs, execution_outcomes): (Vec<_>, Vec<_>) = self
+            .txs_pool
+            .iter()
+            .map(|tx| {
+                let outcome = Bootstraper::new(self.db.clone(), tx.clone()).bootstrap();
+                (tx.clone(), outcome)
+            })
+            .unzip();
+
+        let execution_outcomes: HashMap<_, _> = txs
+            .iter()
+            .map(|tx| tx.transaction.hash())
+            .zip(execution_outcomes)
+            .collect();
+
+        self.txs_pool = Default::default();
+
+        let unproved_block = UnprovedBlock {
+            height: latest_block.height + 1,
+            hash: [0; 32],
+            parent_hash: latest_block.hash,
+            timestamp: 0,
+            txs,
+            previous_global_root: Default::default(),
+            new_global_root: Default::default(),
+            execution_outcomes,
+        };
+
+        let block = unproved_block.prove(skip_proof);
+        info!(time = ?start.elapsed(), height = block.height, txs_count = block.txs.len(), "Block created");
+        self.insert_block(block.clone());
+        block
+    }
+
+    pub fn view(&self, context: ContractCallContext) -> Vec<u8> {
+        Viewer::new(context, self.db.clone()).view()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_init_genesis() {
+        let mut node = MultivmNode::new("temp_multivm_db".to_string());
+        node.init_genesis();
+
+        let latest_block = node.latest_block();
+        assert_eq!(latest_block.height, 1);
+    }
+}
