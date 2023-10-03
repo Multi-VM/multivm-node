@@ -1,0 +1,12 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./multivm_core/meta_contracts/evm/Cargo.toml",
+        "./multivm_core/meta_contracts/root/Cargo.toml",
+        "./multivm_core/Cargo.toml",
+        "./multivm_sdk/Cargo.toml",
+        "./example_contracts/Cargo.toml",
+        "./example_contracts/demo_ccc/Cargo.toml",
+        "./example_contracts/counter/Cargo.toml",
+        "./example_contracts/fibonacci/Cargo.toml"
+    ]
+}

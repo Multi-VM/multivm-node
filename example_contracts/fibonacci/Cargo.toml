@@ -1,0 +1,12 @@
+[package]
+name = "fibonacci_contract"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+risc0-zkvm = { version = "0.18.0", default-features = false, features = [ "std" ] }
+multivm_sdk = { path = "../../multivm_sdk/sdk" }
+multivm_sdk_macros = { path = "../../multivm_sdk/macros" }
+borsh = { version = "1.0.0-alpha.6", features = ["derive"] }
