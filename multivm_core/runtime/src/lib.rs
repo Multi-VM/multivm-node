@@ -105,9 +105,17 @@ impl MultivmNode {
 
         self.txs_pool = Default::default();
 
+        let hash = {
+            let mut hash: [u8; 32] = [0; 32];
+            let (one, two) = hash.split_at_mut(24);
+            one.copy_from_slice(&[0; 24]);
+            two.copy_from_slice(&(latest_block.height + 1).to_be_bytes());
+            hash
+        };
+
         let unproved_block = UnprovedBlock {
             height: latest_block.height + 1,
-            hash: [0; 32],
+            hash,
             parent_hash: latest_block.hash,
             timestamp: 0,
             txs,
