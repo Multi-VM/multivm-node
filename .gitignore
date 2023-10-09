@@ -2,4 +2,9 @@
 **/.direnv
 **/.envrc
 
+.DS_Store
 /multivm_core/state
+multivm_core/client/node_modules
+multivm_core/client/artifacts
+multivm_core/client/cache
+multivm_core/client/package-lock.json
