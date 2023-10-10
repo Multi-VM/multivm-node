@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use once_cell::sync::Lazy;
-use risc0_zkvm::sha::rust_crypto::{Digest, Sha256};
+use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use std::{collections::HashMap, sync::Mutex};
 
 use multivm_primitives::{
@@ -31,12 +31,12 @@ struct Env {
 
 impl Env {
     fn new_from_call(call: &ContractCallContext) -> Self {
-        let call_hash = {
-            let call_bytes = borsh::to_vec(&call).expect("Expected to serialize");
-            let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
-            algorithm.update(&call_bytes);
-            algorithm.finalize_reset().as_slice().try_into().unwrap()
-        };
+        let call_bytes = borsh::to_vec(&call).expect("Expected to serialize");
+        let call_hash = HashImpl::hash_bytes(&call_bytes)
+            .to_owned()
+            .as_bytes()
+            .try_into()
+            .unwrap();
 
         Self {
             signer_id: call.signer_id.clone(),
@@ -71,12 +71,12 @@ impl Env {
 
     /// Makes a cross-contract call
     pub fn cross_contract_call(&mut self, req: CrossContractCallRequest) -> Commitment {
-        let req_hash = {
-            let call_bytes = borsh::to_vec(&req).expect("Expected to serialize");
-            let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
-            algorithm.update(&call_bytes);
-            algorithm.finalize_reset().as_slice().try_into().unwrap()
-        };
+        let req_bytes = borsh::to_vec(&req).expect("Expected to serialize");
+        let req_hash = HashImpl::hash_bytes(&req_bytes)
+            .to_owned()
+            .as_bytes()
+            .try_into()
+            .unwrap();
 
         let response = risc0_zkvm::guest::env::send_recv_slice(
             CROSS_CONTRACT_CALL,
@@ -88,11 +88,11 @@ impl Env {
 
         // assert_eq!(req_hash, commitment.call_hash); // TODO: fix
 
-        let output_hash = {
-            let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
-            algorithm.update(&commitment.response);
-            algorithm.finalize_reset().as_slice().try_into().unwrap()
-        };
+        let output_hash = HashImpl::hash_bytes(&commitment.response)
+            .to_owned()
+            .as_bytes()
+            .try_into()
+            .unwrap();
 
         self.cross_calls_hashes.push((req_hash, output_hash));
 
@@ -120,11 +120,11 @@ impl Env {
             return None;
         };
 
-        let hash = {
-            let algorithm = &mut Sha256::default();
-            algorithm.update(storage.clone());
-            algorithm.finalize_reset().as_slice().try_into().unwrap()
-        };
+        let hash = HashImpl::hash_bytes(&storage)
+            .to_owned()
+            .as_bytes()
+            .try_into()
+            .unwrap();
 
         self.storage_cache
             .insert(key.clone(), (storage.clone(), false));
@@ -144,11 +144,11 @@ impl Env {
     }
 
     fn send_storage_update(key: String, storage: Vec<u8>) -> HashDigest {
-        let hash = {
-            let algorithm = &mut Sha256::default();
-            algorithm.update(&storage);
-            algorithm.finalize_reset().as_slice().try_into().unwrap()
-        };
+        let hash = HashImpl::hash_bytes(&storage)
+            .to_owned()
+            .as_bytes()
+            .try_into()
+            .unwrap();
 
         let request = SetStorageRequest {
             key: key.clone(),

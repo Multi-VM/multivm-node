@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use once_cell::sync::Lazy;
 use risc0_zkvm::sha::rust_crypto::{Digest, Sha256};
-use std::{collections::HashMap, str::FromStr, sync::Mutex};
+use std::{collections::HashMap, sync::Mutex};
 
 use multivm_primitives::{
     syscalls::{
@@ -260,25 +260,25 @@ pub fn commit<T: borsh::BorshSerialize>(output: T) {
     ENV.lock().unwrap().take().unwrap().commit(output)
 }
 
-/// Get EVM address by AccountId
-pub fn get_evm_address(account_id: AccountId) -> eth_primitive_types::H160 {
-    let mut hardcoded_mappings = std::collections::HashMap::new();
-    hardcoded_mappings.insert(
-        AccountId::from(AccountId::from("alice.multivm")),
-        eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000001").unwrap(),
-    );
-    hardcoded_mappings.insert(
-        AccountId::from(AccountId::from("bob.multivm")),
-        eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000002").unwrap(),
-    );
-    hardcoded_mappings.insert(
-        AccountId::from(AccountId::from("charlie.multivm")),
-        eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000003").unwrap(),
-    );
-    hardcoded_mappings.insert(
-        AccountId::from(AccountId::from("eve.multivm")),
-        eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000004").unwrap(),
-    );
+// /// Get EVM address by AccountId
+// pub fn get_evm_address(account_id: AccountId) -> eth_primitive_types::H160 {
+//     let mut hardcoded_mappings = std::collections::HashMap::new();
+//     hardcoded_mappings.insert(
+//         AccountId::from(AccountId::from("alice.multivm")),
+//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000001").unwrap(),
+//     );
+//     hardcoded_mappings.insert(
+//         AccountId::from(AccountId::from("bob.multivm")),
+//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000002").unwrap(),
+//     );
+//     hardcoded_mappings.insert(
+//         AccountId::from(AccountId::from("charlie.multivm")),
+//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000003").unwrap(),
+//     );
+//     hardcoded_mappings.insert(
+//         AccountId::from(AccountId::from("eve.multivm")),
+//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000004").unwrap(),
+//     );
 
-    hardcoded_mappings.get(&account_id).unwrap().clone()
-}
+//     hardcoded_mappings.get(&account_id).unwrap().clone()
+// }

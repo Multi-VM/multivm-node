@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{
-    k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, Digest,
-    SignedTransaction, Transaction, SYSTEM_META_CONTRACT_ACCOUNT_ID,
+    k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
+    Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction, Transaction,
 };
 use multivm_runtime::MultivmNode;
 use rand::rngs::OsRng;
@@ -49,6 +49,10 @@ pub struct NodeHelper {
 }
 
 impl NodeHelper {
+    fn super_account_id() -> MultiVmAccountId {
+        MultiVmAccountId::try_from("super.multivm").unwrap()
+    }
+
     pub fn new_temp() -> Self {
         let mut helper = Self {
             node: init_temp_node(),
@@ -63,64 +67,79 @@ impl NodeHelper {
     fn create_super_account_now(&mut self) {
         let mut csprng = OsRng;
         let sk = multivm_primitives::k256::ecdsa::SigningKey::random(&mut csprng);
-        let account_id = AccountId::from("creator.multivm");
-        self.keys.insert(account_id.clone(), sk.clone());
+        let account_id = Self::super_account_id();
+        self.keys.insert(account_id.clone().into(), sk.clone());
+
         let latest_block = self.node.latest_block();
-        let tx = create_account_tx(
+
+        let tx = multivm_primitives::TransactionBuilder::new(
+            AccountId::system_meta_contract(),
+            vec![ContractCall::new(
+                "init_debug_account".into(),
+                &sk.verifying_key().to_sec1_bytes().to_vec(),
+                100_000_000,
+                0,
+            )],
+            AccountId::system_meta_contract(),
             &latest_block,
-            account_id.clone(),
-            AccountId::from("multivm"),
-            sk.verifying_key(),
-        );
+        )
+        .build();
+
         let tx = SignedTransaction {
             transaction: tx,
             signature: Default::default(),
             attachments: None,
         };
 
-        self.node.add_tx(tx);
+        self.node.add_tx(tx.into());
         self.produce_block(true);
     }
 
-    pub fn create_account(&mut self, account_id: &AccountId) -> Digest {
-        let super_account_id = AccountId::from("creator.multivm");
-
+    pub fn create_account(&mut self, multivm_account_id: &MultiVmAccountId) -> Digest {
         let mut csprng = OsRng;
         let sk = multivm_primitives::k256::ecdsa::SigningKey::random(&mut csprng);
-        self.keys.insert(account_id.clone(), sk.clone());
+        self.keys
+            .insert(multivm_account_id.clone().into(), sk.clone());
         let latest_block = self.node.latest_block();
         let tx = create_account_tx(
             &latest_block,
-            account_id.clone(),
-            super_account_id.clone(),
+            multivm_account_id.clone(),
+            Self::super_account_id().into(),
             sk.verifying_key(),
         );
         let tx_hash = tx.hash();
-        let tx = SignedTransaction::new(
-            tx,
-            self.keys.get(&AccountId::from("creator.multivm")).unwrap(),
-        );
+        let tx =
+            SignedTransaction::new(tx, self.keys.get(&Self::super_account_id().into()).unwrap());
 
-        self.node.add_tx(tx);
+        self.node.add_tx(tx.into());
 
         tx_hash
     }
 
-    pub fn create_contract(&mut self, contract_id: &AccountId, code: Vec<u8>) -> (Digest, Digest) {
+    pub fn create_contract(
+        &mut self,
+        multivm_contract_id: &MultiVmAccountId,
+        code: Vec<u8>,
+    ) -> (Digest, Digest) {
         (
-            self.create_account(contract_id),
-            self.deploy_contract(contract_id, code),
+            self.create_account(multivm_contract_id),
+            self.deploy_contract(multivm_contract_id, code),
         )
     }
 
-    pub fn deploy_contract(&mut self, contract_id: &AccountId, code: Vec<u8>) -> Digest {
-        let key = self.keys.get(contract_id).unwrap();
+    pub fn deploy_contract(
+        &mut self,
+        multivm_contract_id: &MultiVmAccountId,
+        code: Vec<u8>,
+    ) -> Digest {
+        let key = self.keys.get(&multivm_contract_id.clone().into()).unwrap();
         let latest_block = self.node.latest_block();
-        let (tx, attachs) = deploy_contract_tx(&latest_block, contract_id.clone(), code);
+        let (tx, attachs) =
+            deploy_contract_tx(&latest_block, multivm_contract_id.clone().into(), code);
         let tx_hash = tx.hash();
         let tx = SignedTransaction::new_with_attachments(tx, key, attachs);
 
-        self.node.add_tx(tx);
+        self.node.add_tx(tx.into());
 
         tx_hash
     }
@@ -143,7 +162,7 @@ impl NodeHelper {
 
         let tx_hash = tx.hash();
         let tx = SignedTransaction::new(tx, self.keys.get(signer_id).unwrap());
-        self.node.add_tx(tx);
+        self.node.add_tx(tx.into());
 
         tx_hash
     }
@@ -151,27 +170,44 @@ impl NodeHelper {
     pub fn produce_block(&mut self, skip_proof: bool) -> Block {
         self.node.produce_block(skip_proof)
     }
+
+    pub fn account(&self, account_id: &AccountId) -> Account {
+        let bytes = self.node.view(ContractCallContext {
+            contract_id: AccountId::system_meta_contract(),
+            contract_call: ContractCall::new(
+                "account_info".to_string(),
+                account_id,
+                100_000_000,
+                0,
+            ),
+            sender_id: AccountId::system_meta_contract(),
+            signer_id: AccountId::system_meta_contract(),
+            environment: EnvironmentContext { block_height: 0 },
+        });
+
+        borsh::from_slice(&bytes).unwrap()
+    }
 }
 
 fn create_account_tx(
     latest_block: &Block,
-    account_id: AccountId,
+    multivm_account_id: MultiVmAccountId,
     signer_id: AccountId,
     pk: &multivm_primitives::k256::ecdsa::VerifyingKey,
 ) -> Transaction {
     #[derive(BorshDeserialize, BorshSerialize)]
     struct AccountCreationRequest {
-        pub account_id: AccountId,
+        pub account_id: MultiVmAccountId,
         pub public_key: Vec<u8>,
     }
 
     let args = AccountCreationRequest {
-        account_id,
+        account_id: multivm_account_id,
         public_key: pk.to_sec1_bytes().to_vec(),
     };
 
     multivm_primitives::TransactionBuilder::new(
-        AccountId::from(String::from(SYSTEM_META_CONTRACT_ACCOUNT_ID)),
+        AccountId::system_meta_contract(),
         vec![ContractCall::new(
             "create_account".to_string(),
             &args,
@@ -203,7 +239,7 @@ fn deploy_contract_tx(
     let args = ContractDeploymentRequest { image_id };
 
     let tx = multivm_primitives::TransactionBuilder::new(
-        AccountId::from(String::from(SYSTEM_META_CONTRACT_ACCOUNT_ID)),
+        AccountId::system_meta_contract(),
         vec![ContractCall::new(
             "deploy_contract".to_string(),
             &args,
@@ -218,4 +254,15 @@ fn deploy_contract_tx(
     let attachments = Attachments { contracts_images };
 
     (tx, attachments)
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+pub struct Account {
+    internal_id: u128,
+    pub evm_address: EvmAddress,
+    pub multivm_account_id: Option<MultiVmAccountId>,
+    pub public_key: Option<Vec<u8>>,
+    pub image_id: Option<[u32; 8]>,
+    pub balance: u128,
+    pub nonce: u64,
 }
