@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use multivm_primitives::{
-    Block, Commitment, Digest, SignedTransaction, SYSTEM_META_CONTRACT_ACCOUNT_ID,
+    Block, Commitment, Digest, SupportedTransaction,
 };
 use tracing::info;
 
@@ -14,7 +14,7 @@ pub struct UnprovedBlock {
     pub previous_global_root: Digest,
     pub new_global_root: Digest,
     pub timestamp: u64,
-    pub txs: Vec<SignedTransaction>,
+    pub txs: Vec<SupportedTransaction>,
     pub execution_outcomes: HashMap<Digest, ExecutionOutcome>,
 }
 
@@ -28,11 +28,18 @@ impl UnprovedBlock {
                 let response = if skip_proof {
                     outcome.commitment.response.clone()
                 } else {
-                        let methods = self
+                        let methods = match self
                             .txs
                             .iter()
-                            .find(|tx| tx.transaction.hash() == *hash)
-                            .unwrap().transaction.calls.iter().map(|call| call.method.clone()).collect::<Vec<_>>();
+                            .find(|tx| tx.hash() == *hash)
+                            .unwrap() {
+                                SupportedTransaction::MultiVm(multivm_tx) => {
+                                    multivm_tx.transaction.calls.iter().map(|call| call.method.clone()).collect::<Vec<_>>()
+                                }
+                                // TODO: replace with proper method
+                                SupportedTransaction::Evm(_) => {vec!["evm call".to_string()]}
+                            };
+
                         let start = std::time::Instant::now();
 
                         info!(tx_hash = ?eth_primitive_types::H256::from(hash), methods = ?methods, "Proving outcome...");
@@ -49,11 +56,10 @@ impl UnprovedBlock {
                 let tx = self
                     .txs
                     .iter()
-                    .find(|tx| tx.transaction.hash() == *hash)
+                    .find(|tx| tx.hash() == *hash)
                     .unwrap();
 
-                let response = if tx.transaction.receiver_id.to_string().as_str()
-                    == SYSTEM_META_CONTRACT_ACCOUNT_ID
+                let response = if tx.to_system()
                 {
                     response.clone()
                 } else {

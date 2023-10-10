@@ -4,7 +4,7 @@ use tracing::{debug, span, Level};
 
 use multivm_primitives::{
     syscalls::{GetStorageResponse, GET_STORAGE_CALL},
-    AccountId, Commitment, ContractCallContext, SignedTransaction, SYSTEM_META_CONTRACT_ACCOUNT_ID,
+    AccountId, Commitment, ContractCallContext, EnvironmentContext, SupportedTransaction,
 };
 
 const MAX_MEMORY: u32 = 0x10000000;
@@ -12,7 +12,7 @@ const PAGE_SIZE: u32 = 0x400;
 
 #[derive(BorshDeserialize, BorshSerialize)]
 enum Action {
-    ExecuteTransaction(SignedTransaction),
+    ExecuteTransaction(SupportedTransaction, EnvironmentContext),
     View(ContractCallContext),
 }
 
@@ -38,10 +38,8 @@ impl Viewer {
             .build()
             .unwrap();
 
-        let elf = if self.context.contract_id.to_string().as_str() == "evm" {
-            meta_contracts::EVM_METACONTRACT_ELF.to_vec()
-        } else if self.context.contract_id.to_string().as_str() == "multivm" {
-            meta_contracts::ROOT_METACONTRACT_ELF.to_vec()
+        let elf = if self.context.contract_id == AccountId::system_meta_contract() {
+            meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec()
         } else {
             self.load_contract(self.context.contract_id.clone())
                 .context(format!("Load contract {:?}", self.context.contract_id))
@@ -62,7 +60,7 @@ impl Viewer {
     fn load_contract(&self, contract_id: AccountId) -> Result<Vec<u8>> {
         let db_key = format!(
             "committed_storage.{}.code.{}",
-            SYSTEM_META_CONTRACT_ACCOUNT_ID,
+            AccountId::system_meta_contract(),
             contract_id.to_string(),
         );
 

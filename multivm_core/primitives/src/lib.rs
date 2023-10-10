@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::ecdsa::signature::{Signer, Verifier};
+use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use serde::{Deserialize, Serialize};
 
 pub use k256;
@@ -7,8 +8,6 @@ pub use k256;
 pub mod syscalls;
 
 use std::collections::HashMap;
-
-pub const SYSTEM_META_CONTRACT_ACCOUNT_ID: &str = "multivm";
 
 #[derive(
     Serialize,
@@ -27,6 +26,7 @@ pub struct ContractCallContext {
     pub contract_call: ContractCall,
     pub sender_id: AccountId,
     pub signer_id: AccountId,
+    pub environment: EnvironmentContext,
 }
 
 impl ContractCallContext {
@@ -50,25 +50,165 @@ impl ContractCallContext {
     Hash,
     PartialOrd,
     Eq,
+)]
+pub struct EnvironmentContext {
+    pub block_height: u64,
+}
+
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
     Ord,
 )]
-pub struct AccountId(String);
+pub enum AccountId {
+    MultiVm(MultiVmAccountId),
+    Evm(EvmAddress),
+}
 
-impl From<String> for AccountId {
-    fn from(id: String) -> Self {
+impl AccountId {
+    /// Returns the system metacontract account id
+    pub fn system_meta_contract() -> Self {
+        Self::MultiVm(MultiVmAccountId::try_from("multivm".to_string()).unwrap())
+    }
+}
+
+impl From<MultiVmAccountId> for AccountId {
+    fn from(id: MultiVmAccountId) -> Self {
+        Self::MultiVm(id)
+    }
+}
+
+impl From<EvmAddress> for AccountId {
+    fn from(id: EvmAddress) -> Self {
+        Self::Evm(id)
+    }
+}
+
+impl std::fmt::Display for AccountId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AccountId::MultiVm(id) => write!(f, "{}", id),
+            AccountId::Evm(id) => write!(f, "{}", id),
+        }
+    }
+}
+
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
+    Ord,
+)]
+pub struct MultiVmAccountId(String);
+
+impl MultiVmAccountId {
+    const MAX_LENGTH: usize = 64;
+    const ALLWED_SYMBOLS: &'static str = "abcdefghijklmnopqrstuvwxyz0123456789_-.";
+
+    fn validate_account_id(id: &str) -> Result<(), std::io::Error> {
+        if id.len() > MultiVmAccountId::MAX_LENGTH {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "AccountID is too long",
+            ));
+        }
+
+        if id.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "AccountID is empty",
+            ));
+        }
+
+        if id
+            .to_lowercase()
+            .chars()
+            .any(|c| !MultiVmAccountId::ALLWED_SYMBOLS.contains(c))
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "AccountID contains invalid symbols",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+impl TryFrom<String> for MultiVmAccountId {
+    type Error = std::io::Error;
+
+    fn try_from(id: String) -> Result<Self, Self::Error> {
+        Self::validate_account_id(id.as_str()).map(|_| Self(id))
+    }
+}
+
+impl TryFrom<&str> for MultiVmAccountId {
+    type Error = std::io::Error;
+
+    fn try_from(id: &str) -> Result<Self, Self::Error> {
+        Self::validate_account_id(id).map(|_| Self(id.to_string()))
+    }
+}
+
+impl std::fmt::Display for MultiVmAccountId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
+    Ord,
+)]
+pub struct EvmAddress([u8; 20]);
+
+impl From<[u8; 20]> for EvmAddress {
+    fn from(id: [u8; 20]) -> Self {
         Self(id)
     }
 }
 
-impl From<&str> for AccountId {
-    fn from(id: &str) -> Self {
-        Self(id.to_string())
+impl From<eth_primitive_types::H160> for EvmAddress {
+    fn from(id: eth_primitive_types::H160) -> Self {
+        Self(id.into())
     }
 }
 
-impl ToString for AccountId {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl From<EvmAddress> for eth_primitive_types::H160 {
+    fn from(id: EvmAddress) -> Self {
+        id.0.into()
+    }
+}
+
+impl std::fmt::Display for EvmAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String = self.0.iter().map(|byte| format!("{:02x}", byte)).collect();
+        write!(f, "{}", s)
     }
 }
 
@@ -154,6 +294,42 @@ impl ContractCall {
     }
 }
 
+// TODO: rename
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub enum SupportedTransaction {
+    MultiVm(SignedTransaction),
+    Evm(Vec<u8>),
+}
+
+impl SupportedTransaction {
+    pub fn hash(&self) -> Digest {
+        match self {
+            Self::MultiVm(tx) => tx.transaction.hash(),
+            // TODO: replace with proper hash
+            Self::Evm(tx) => HashImpl::hash_bytes(&tx).as_bytes().try_into().unwrap(),
+        }
+    }
+
+    pub fn to_system(&self) -> bool {
+        match self {
+            Self::MultiVm(tx) => tx.transaction.receiver_id == AccountId::system_meta_contract(),
+            SupportedTransaction::Evm(_) => false,
+        }
+    }
+}
+
+impl From<SignedTransaction> for SupportedTransaction {
+    fn from(tx: SignedTransaction) -> Self {
+        Self::MultiVm(tx)
+    }
+}
+
+impl From<Vec<u8>> for SupportedTransaction {
+    fn from(tx: Vec<u8>) -> Self {
+        Self::Evm(tx)
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -205,12 +381,17 @@ impl Transaction {
         borsh::to_vec(self).unwrap()
     }
 
-    pub fn context(&self, call_index: usize) -> ContractCallContext {
+    pub fn context(
+        &self,
+        call_index: usize,
+        environment: EnvironmentContext,
+    ) -> ContractCallContext {
         ContractCallContext {
             contract_id: self.receiver_id.clone(),
             contract_call: self.calls[call_index].clone(),
             sender_id: self.signer_id.clone(),
             signer_id: self.signer_id.clone(),
+            environment,
         }
     }
 }
@@ -287,7 +468,7 @@ pub struct Block {
     pub previous_global_root: Digest,
     pub new_global_root: Digest,
     pub timestamp: u64,
-    pub txs: Vec<SignedTransaction>,
+    pub txs: Vec<SupportedTransaction>,
     pub call_outputs: HashMap<Digest, Vec<u8>>,
     // pub execution_outcomes: HashMap<Digest, ExecutionOutcome>,
     // pub sessions: HashMap<Digest, String>, // TODO: replace json to struct

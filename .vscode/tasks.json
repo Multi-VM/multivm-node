@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"build",
+				"--release"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/multivm_core"
+			},
+			"label": "rust: cargo build",
+			"presentation": {
+				"reveal": "silent",
+				// "revealProblems": "onProblem",
+				// "close": true
+			}
+		}
+	]
+}

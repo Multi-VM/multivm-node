@@ -46,13 +46,10 @@ impl Executor {
             .build()
             .unwrap();
 
-        let elf = if self.context.contract_id.to_string().as_str() == "evm" {
-            meta_contracts::EVM_METACONTRACT_ELF.to_vec()
-        } else {
-            self.load_contract(self.context.contract_id.clone())
-                .context(format!("Load contract {:?}", self.context.contract_id))
-                .unwrap()
-        };
+        let elf = self
+            .load_contract(self.context.contract_id.clone())
+            .context(format!("Load contract {:?}", self.context.contract_id))
+            .unwrap();
 
         info!(contract = ?self.context.contract_id, size = ?elf.len(), "Executing contract");
 
@@ -93,6 +90,7 @@ impl Executor {
                 contract_call: req.contract_call,
                 sender_id: self.context.contract_id.clone(),
                 signer_id: self.context.signer_id.clone(),
+                environment: self.context.environment.clone(),
             };
 
             let outcome = Executor::new(call_context, self.db.clone()).execute();
@@ -188,7 +186,7 @@ impl std::io::Write for ContractLogger {
         // TODO: handle non-utf8 logs
         let msg = String::from_utf8(buf.to_vec()).unwrap();
 
-        tracing::debug!(contract_id = ?self.contract_id, msg, "📜 Contract log");
+        tracing::info!(contract_id = ?self.contract_id, msg, "📜 Contract log");
 
         Ok(buf.len())
     }

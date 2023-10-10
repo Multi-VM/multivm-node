@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use risc0_zkvm::sha::rust_crypto::{Digest, Sha256};
+use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use tracing::{debug, span, Level};
 
 use multivm_primitives::{
@@ -7,7 +7,7 @@ use multivm_primitives::{
         CrossContractCallRequest, DeployContractRequest, GetStorageResponse, SetStorageRequest,
         CROSS_CONTRACT_CALL, DEPLOY_CONTRACT_CALL, GET_STORAGE_CALL, SET_STORAGE_CALL,
     },
-    Attachments, ContractCallContext, SignedTransaction, SYSTEM_META_CONTRACT_ACCOUNT_ID,
+    AccountId, Attachments, ContractCallContext, EnvironmentContext, SupportedTransaction,
 };
 
 use crate::{executor::Executor, outcome::ExecutionOutcome, utils};
@@ -19,36 +19,47 @@ const PAGE_SIZE: u32 = 0x400;
 
 #[derive(BorshDeserialize, BorshSerialize)]
 enum Action {
-    ExecuteTransaction(SignedTransaction),
+    ExecuteTransaction(SupportedTransaction, EnvironmentContext),
     View(ContractCallContext),
 }
 
 pub struct Bootstraper {
     db: sled::Db,
-    signed_tx: SignedTransaction,
+    transaction: SupportedTransaction,
     attachments: Option<Attachments>,
     cross_calls_outcomes: Rc<RefCell<Vec<ExecutionOutcome>>>,
+    environment: EnvironmentContext,
 }
 
 impl Bootstraper {
-    pub fn new(db: sled::Db, mut signed_tx: SignedTransaction) -> Self {
-        let attachments = signed_tx.attachments;
-        signed_tx.attachments = None;
+    pub fn new(
+        db: sled::Db,
+        transaction: SupportedTransaction,
+        environment: EnvironmentContext,
+    ) -> Self {
+        let attachments = match &transaction {
+            SupportedTransaction::MultiVm(multivm_tx) => Some(multivm_tx.attachments.clone()),
+            SupportedTransaction::Evm(_) => None,
+        }
+        .flatten();
+
         Self {
             db,
-            signed_tx,
+            transaction,
             attachments,
             cross_calls_outcomes: Default::default(),
+            environment,
         }
     }
 
     pub fn bootstrap(self) -> ExecutionOutcome {
         debug!(
-            tx_hash = utils::bytes_to_hex(self.signed_tx.transaction.hash().as_slice()),
+            // tx_hash = utils::bytes_to_hex(self.signed_tx.transaction.hash().as_slice()),
             "Bootstraping transaction"
         );
 
-        let action = Action::ExecuteTransaction(self.signed_tx.clone());
+        let action = Action::ExecuteTransaction(self.transaction.clone(), self.environment.clone());
+
         let action_bytes = borsh::to_vec(&action).unwrap();
 
         let env = risc0_zkvm::ExecutorEnv::builder()
@@ -61,7 +72,7 @@ impl Bootstraper {
             .build()
             .unwrap();
 
-        let elf = meta_contracts::ROOT_METACONTRACT_ELF.to_vec();
+        let elf = meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec();
 
         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY).unwrap();
         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
@@ -120,11 +131,17 @@ impl Bootstraper {
             let req: CrossContractCallRequest = BorshDeserialize::try_from_slice(&from_guest)
                 .expect("Invalid contract call request");
 
+            // TODO: fix
+            let SupportedTransaction::MultiVm(multivm_tx) = self.transaction.clone() else {
+                panic!("Invalid transaction type");
+            };
+
             let call_context = ContractCallContext {
                 contract_id: req.contract_id,
                 contract_call: req.contract_call,
-                sender_id: self.signed_tx.transaction.signer_id.clone(),
-                signer_id: self.signed_tx.transaction.signer_id.clone(),
+                sender_id: multivm_tx.transaction.signer_id.clone(),
+                signer_id: multivm_tx.transaction.signer_id.clone(),
+                environment: self.environment.clone(),
             };
 
             let outcome = Executor::new(call_context, self.db.clone()).execute();
@@ -148,7 +165,8 @@ impl Bootstraper {
 
             let db_key = format!(
                 "committed_storage.{}.{}",
-                SYSTEM_META_CONTRACT_ACCOUNT_ID, key
+                AccountId::system_meta_contract(),
+                key
             );
 
             let storage = self
@@ -167,7 +185,7 @@ impl Bootstraper {
 
             let response_bytes = borsh::to_vec(&response).unwrap();
 
-            debug!(contract=SYSTEM_META_CONTRACT_ACCOUNT_ID, key=?key, "Loading storage");
+            debug!(contract=?AccountId::system_meta_contract(), key=?key, "Loading storage");
 
             Ok(response_bytes.into())
         }
@@ -182,16 +200,15 @@ impl Bootstraper {
 
             let request: SetStorageRequest = BorshDeserialize::try_from_slice(&from_guest).unwrap();
 
-            let algorithm = &mut Sha256::default();
-            algorithm.update(request.storage.clone());
-            let hash2 = algorithm.finalize_reset();
+            let hash2 = HashImpl::hash_bytes(&request.storage);
             // assert_eq!(request.hash, hash2.as_slice());
 
-            debug!(contract=SYSTEM_META_CONTRACT_ACCOUNT_ID, key=?request.key, new_hash = utils::bytes_to_hex(hash2.as_slice()), "Updating storage");
+            debug!(contract=?AccountId::system_meta_contract(), key=?request.key, new_hash = utils::bytes_to_hex(hash2.as_bytes()), "Updating storage");
 
             let db_key = format!(
                 "committed_storage.{}.{}",
-                SYSTEM_META_CONTRACT_ACCOUNT_ID, request.key
+                AccountId::system_meta_contract(),
+                request.key
             );
 
             self.db

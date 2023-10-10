@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
-use multivm_primitives::{Block, ContractCallContext, SignedTransaction};
+use multivm_primitives::{Block, ContractCallContext, EnvironmentContext, SupportedTransaction};
 use tracing::{debug, info};
 use viewer::Viewer;
 
 pub mod block;
 pub mod bootstraper;
-pub mod context;
 pub mod executor;
 pub mod outcome;
 pub mod utils;
@@ -16,7 +15,7 @@ pub mod viewer;
 
 pub struct MultivmNode {
     db: sled::Db,
-    txs_pool: std::collections::VecDeque<SignedTransaction>,
+    txs_pool: std::collections::VecDeque<SupportedTransaction>,
 }
 
 impl MultivmNode {
@@ -30,7 +29,7 @@ impl MultivmNode {
 
     pub fn init_genesis(&mut self) {
         let genesis_block = Block {
-            height: 1,
+            height: 0,
             hash: [0; 32],
             parent_hash: [0; 32],
             previous_global_root: Default::default(),
@@ -73,8 +72,14 @@ impl MultivmNode {
         latest_block
     }
 
-    pub fn add_tx(&mut self, tx: SignedTransaction) {
+    pub fn add_tx(&mut self, tx: SupportedTransaction) {
         self.txs_pool.push_back(tx);
+    }
+
+    fn environment(&self) -> EnvironmentContext {
+        EnvironmentContext {
+            block_height: self.latest_block().height + 1,
+        }
     }
 
     pub fn produce_block(&mut self, skip_proof: bool) -> Block {
@@ -86,14 +91,15 @@ impl MultivmNode {
             .txs_pool
             .iter()
             .map(|tx| {
-                let outcome = Bootstraper::new(self.db.clone(), tx.clone()).bootstrap();
+                let outcome =
+                    Bootstraper::new(self.db.clone(), tx.clone(), self.environment()).bootstrap();
                 (tx.clone(), outcome)
             })
             .unzip();
 
         let execution_outcomes: HashMap<_, _> = txs
             .iter()
-            .map(|tx| tx.transaction.hash())
+            .map(|tx| tx.hash())
             .zip(execution_outcomes)
             .collect();
 

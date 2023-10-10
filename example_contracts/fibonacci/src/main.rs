@@ -11,7 +11,6 @@ impl Contract {
             a = b;
             b += c;
         }
-        println!("{}", a);
         env::commit(a);
     }
 }
