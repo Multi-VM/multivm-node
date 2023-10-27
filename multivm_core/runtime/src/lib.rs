@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
-use multivm_primitives::{Block, ContractCallContext, EnvironmentContext, SupportedTransaction};
+use multivm_primitives::{Block, EnvironmentContext, SupportedTransaction};
 use tracing::{debug, info};
-use viewer::Viewer;
+use viewer::{SupportedView, Viewer};
 
 pub mod block;
 pub mod bootstraper;
@@ -122,8 +122,8 @@ impl MultivmNode {
         block
     }
 
-    pub fn view(&self, context: ContractCallContext) -> Vec<u8> {
-        Viewer::new(context, self.db.clone()).view()
+    pub fn view(&self, view: SupportedView) -> Vec<u8> {
+        Viewer::new(view, self.db.clone()).view()
     }
 }
 

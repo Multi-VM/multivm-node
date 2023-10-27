@@ -48,7 +48,12 @@ pub fn deploy_evm_contract(owner: Account, code: Vec<u8>) {
     system_env::commit(((token_address.to_fixed_bytes()), reason.1));
 }
 
-pub fn call_contract(caller: Account, contract_address: EvmAddress, data: Vec<u8>) {
+pub fn call_contract(
+    caller: Account,
+    contract_address: EvmAddress,
+    data: Vec<u8>,
+    apply_changes: bool,
+) {
     let config = Config::istanbul();
 
     let vicinity = MemoryVicinity {
@@ -82,7 +87,9 @@ pub fn call_contract(caller: Account, contract_address: EvmAddress, data: Vec<u8
 
     let s = executor.into_state();
     let (a, b) = s.deconstruct();
-    backend.apply(a, b, false);
+    if apply_changes {
+        backend.apply(a, b, false);
+    }
 
     system_env::commit(reason.1);
 }

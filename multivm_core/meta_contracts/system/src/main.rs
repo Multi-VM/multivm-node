@@ -27,11 +27,23 @@ struct ContractDeploymentArgs {
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
-enum Action {
-    ExecuteTransaction(SupportedTransaction, EnvironmentContext),
-    View(ContractCallContext),
+struct EvmCall {
+    pub from: [u8; 20],
+    pub to: [u8; 20],
+    pub input: Vec<u8>,
 }
 
+#[derive(BorshDeserialize, BorshSerialize)]
+enum SupportedView {
+    MultiVm(ContractCallContext),
+    Evm(EvmCall),
+}
+
+#[derive(BorshDeserialize, BorshSerialize)]
+enum Action {
+    ExecuteTransaction(SupportedTransaction, EnvironmentContext),
+    View(SupportedView),
+}
 risc0_zkvm::entry!(entrypoint);
 
 fn entrypoint() {
@@ -44,7 +56,10 @@ fn entrypoint() {
             SupportedTransaction::MultiVm(tx) => process_transaction(tx, environment),
             SupportedTransaction::Evm(tx) => process_ethereum_transaction(tx, environment),
         },
-        Action::View(context) => view(context),
+        Action::View(v) => match v {
+            SupportedView::MultiVm(context) => view(context),
+            SupportedView::Evm(call) => evm_call(call),
+        },
     };
 }
 
@@ -68,6 +83,7 @@ fn process_ethereum_transaction(bytes: Vec<u8>, _environment: EnvironmentContext
             caller,
             EvmAddress::from(tx.to.unwrap().as_address().unwrap().clone()),
             tx.data.expect("No data").to_vec(),
+            true,
         );
     }
 }
@@ -79,6 +95,16 @@ fn view(context: ContractCallContext) {
         "account_info" => account_info(context),
         _ => panic!("Method not found"),
     }
+}
+
+fn evm_call(call: EvmCall) {
+    let caller = account_management::account(
+        &EvmAddress::from(eth_primitive_types::H160::from_slice(&call.from)).into(),
+    )
+    .expect("Caller not found"); // TODO: handle error
+
+    let contract_address = eth_primitive_types::H160::from_slice(&call.to).into();
+    evm::call_contract(caller, contract_address, call.input, false)
 }
 
 // TODO: remove this

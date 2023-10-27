@@ -172,18 +172,22 @@ impl NodeHelper {
     }
 
     pub fn account(&self, account_id: &AccountId) -> Account {
-        let bytes = self.node.view(ContractCallContext {
-            contract_id: AccountId::system_meta_contract(),
-            contract_call: ContractCall::new(
-                "account_info".to_string(),
-                account_id,
-                100_000_000,
-                0,
-            ),
-            sender_id: AccountId::system_meta_contract(),
-            signer_id: AccountId::system_meta_contract(),
-            environment: EnvironmentContext { block_height: 0 },
-        });
+        let bytes = self
+            .node
+            .view(multivm_runtime::viewer::SupportedView::MultiVm(
+                ContractCallContext {
+                    contract_id: AccountId::system_meta_contract(),
+                    contract_call: ContractCall::new(
+                        "account_info".to_string(),
+                        account_id,
+                        100_000_000,
+                        0,
+                    ),
+                    sender_id: AccountId::system_meta_contract(),
+                    signer_id: AccountId::system_meta_contract(),
+                    environment: EnvironmentContext { block_height: 0 },
+                },
+            ));
 
         borsh::from_slice(&bytes).unwrap()
     }

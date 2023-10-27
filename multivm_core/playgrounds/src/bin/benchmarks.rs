@@ -23,7 +23,7 @@ fn main() {
     ];
 
     for bench in benches {
-        for skip_proof in [true, false] {
+        for skip_proof in [true] {
             let t = bench.1(skip_proof);
             println!(
                 "{} ({}): {:.2}s",
@@ -47,6 +47,8 @@ fn account_creation_1(skip_proof: bool) -> Duration {
 
     let start = std::time::Instant::now();
     helper.produce_block(skip_proof);
+    let acc = helper.account(&alice_id.into());
+    println!("alice account: {:?}", acc);
     start.elapsed()
 }
 

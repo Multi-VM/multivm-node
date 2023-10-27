@@ -10,39 +10,62 @@ use multivm_primitives::{
 const MAX_MEMORY: u32 = 0x10000000;
 const PAGE_SIZE: u32 = 0x400;
 
+#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+pub struct EvmCall {
+    pub from: [u8; 20],
+    pub to: [u8; 20],
+    pub input: Vec<u8>,
+}
+
+#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+pub enum SupportedView {
+    MultiVm(ContractCallContext),
+    Evm(EvmCall),
+}
+
+impl SupportedView {
+    pub fn contract_id(&self) -> AccountId {
+        match self {
+            SupportedView::MultiVm(context) => context.contract_id.clone(),
+            SupportedView::Evm(_) => AccountId::system_meta_contract(),
+        }
+    }
+}
+
 #[derive(BorshDeserialize, BorshSerialize)]
 enum Action {
     ExecuteTransaction(SupportedTransaction, EnvironmentContext),
-    View(ContractCallContext),
+    View(SupportedView),
 }
 
 pub struct Viewer {
-    context: ContractCallContext,
+    view: SupportedView,
     db: sled::Db,
 }
 
 impl Viewer {
-    pub fn new(context: ContractCallContext, db: sled::Db) -> Self {
-        Self { context, db }
+    pub fn new(view: SupportedView, db: sled::Db) -> Self {
+        Self { view, db }
     }
 
     pub fn view(self) -> Vec<u8> {
-        let action = Action::View(self.context.clone());
+        let action = Action::View(self.view.clone());
         let action_bytes = borsh::to_vec(&action).unwrap();
 
         let env = risc0_zkvm::ExecutorEnv::builder()
             .add_input(&risc0_zkvm::serde::to_vec(&action_bytes).unwrap())
             .session_limit(Some(usize::MAX))
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
-            .stdout(ContractLogger::new(self.context.contract_id.clone()))
+            .stdout(ContractLogger::new(self.view.contract_id()))
             .build()
             .unwrap();
 
-        let elf = if self.context.contract_id == AccountId::system_meta_contract() {
+        let contract_id = self.view.contract_id();
+        let elf = if contract_id == AccountId::system_meta_contract() {
             meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec()
         } else {
-            self.load_contract(self.context.contract_id.clone())
-                .context(format!("Load contract {:?}", self.context.contract_id))
+            self.load_contract(contract_id.clone())
+                .context(format!("Load contract {:?}", contract_id))
                 .unwrap()
         };
 
@@ -87,7 +110,7 @@ impl Viewer {
 
             let db_key = format!(
                 "committed_storage.{}.{}",
-                self.context.contract_id.to_string(),
+                self.view.contract_id().to_string(),
                 key
             );
 
@@ -107,7 +130,7 @@ impl Viewer {
 
             let response_bytes = borsh::to_vec(&response).unwrap();
 
-            debug!(contract=?self.context.contract_id, key=?key, "Loading storage");
+            debug!(contract=?self.view.contract_id(), key=?key, "Loading storage");
 
             Ok(response_bytes.into())
         }
