@@ -49,7 +49,7 @@ pub fn deploy_evm_contract(owner: Account, code: Vec<u8>) {
 }
 
 pub fn call_contract(
-    caller: Account,
+    caller_address: EvmAddress,
     contract_address: EvmAddress,
     data: Vec<u8>,
     apply_changes: bool,
@@ -77,7 +77,7 @@ pub fn call_contract(
     let mut executor = StackExecutor::new_with_precompiles(state, &config, &precompiles);
 
     let reason = executor.transact_call(
-        caller.evm_address.into(),
+        caller_address.into(),
         contract_address.into(),
         U256::zero(),
         data,

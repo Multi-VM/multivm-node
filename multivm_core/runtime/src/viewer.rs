@@ -12,7 +12,7 @@ const PAGE_SIZE: u32 = 0x400;
 
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub struct EvmCall {
-    pub from: [u8; 20],
+    pub from: Option<[u8; 20]>,
     pub to: [u8; 20],
     pub input: Vec<u8>,
 }
@@ -49,9 +49,12 @@ impl Viewer {
     }
 
     pub fn view(self) -> Vec<u8> {
-        let action = Action::View(self.view.clone(), EnvironmentContext {
-            block_height: 2, // TODO: hardcoded height
-        });
+        let action = Action::View(
+            self.view.clone(),
+            EnvironmentContext {
+                block_height: 2, // TODO: hardcoded height
+            },
+        );
         let action_bytes = borsh::to_vec(&action).unwrap();
 
         let env = risc0_zkvm::ExecutorEnv::builder()
