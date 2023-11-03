@@ -78,6 +78,20 @@ impl AccountId {
     pub fn system_meta_contract() -> Self {
         Self::MultiVm(MultiVmAccountId::try_from("multivm".to_string()).unwrap())
     }
+
+    pub fn multivm(&self) -> MultiVmAccountId {
+        match self {
+            AccountId::MultiVm(account_id) => account_id.clone(),
+            AccountId::Evm(_) => panic!("Not a multiVM account"),
+        }
+    }
+
+    pub fn evm(&self) -> EvmAddress {
+        match self {
+            AccountId::MultiVm(_) => panic!("Not a EVM account"),
+            AccountId::Evm(address) => address.clone(),
+        }
+    }
 }
 
 impl From<MultiVmAccountId> for AccountId {
@@ -289,6 +303,15 @@ impl ContractCall {
         }
     }
 
+    pub fn new_call<T: BorshSerialize>(method: &str, args: &T) -> Self {
+        Self {
+            method: method.into(),
+            args: borsh::to_vec(args).expect("Expected to serialize"),
+            gas: 300_000,
+            deposit: 0,
+        }
+    }
+
     pub fn try_deserialize_args<T: BorshDeserialize>(&self) -> std::io::Result<T> {
         borsh::BorshDeserialize::deserialize(&mut self.args.as_slice())
     }
@@ -313,7 +336,7 @@ impl SupportedTransaction {
     pub fn to_system(&self) -> bool {
         match self {
             Self::MultiVm(tx) => tx.transaction.receiver_id == AccountId::system_meta_contract(),
-            SupportedTransaction::Evm(_) => false,
+            SupportedTransaction::Evm(_) => true,
         }
     }
 }

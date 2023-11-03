@@ -22,3 +22,5 @@ ethabi = "18.0.0"
 tiny-keccak = { version = "2.0", features = ["sha3"] }
 rand = { version = "0.8.5" }
 risc0-zkvm = { version = "0.18.0" }
+k256 = { version = "=0.13.1", features = ["arithmetic", "serde", "expose-field", "std", "ecdsa"], default_features = false }
+ethers-core = "2.0.10"

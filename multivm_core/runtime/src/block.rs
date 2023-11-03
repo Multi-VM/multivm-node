@@ -46,7 +46,7 @@ impl UnprovedBlock {
                         let outcome = outcome.prove_all();
                         info!(
                             tx_hash = ?eth_primitive_types::H256::from(hash),
-                            methods = ?methods, 
+                            methods = ?methods,
                             duration = ?start.elapsed(),
                             "Outcome proved",
                         );

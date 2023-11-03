@@ -279,6 +279,5 @@ pub fn commit<T: borsh::BorshSerialize>(output: T) {
 //         AccountId::from(AccountId::from("eve.multivm")),
 //         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000004").unwrap(),
 //     );
-
 //     hardcoded_mappings.get(&account_id).unwrap().clone()
 // }

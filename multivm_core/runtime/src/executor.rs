@@ -171,12 +171,12 @@ impl Executor {
     }
 }
 
-struct ContractLogger {
-    contract_id: AccountId,
+pub struct ContractLogger {
+    pub contract_id: AccountId,
 }
 
 impl ContractLogger {
-    fn new(contract_id: AccountId) -> Self {
+    pub fn new(contract_id: AccountId) -> Self {
         Self { contract_id }
     }
 }

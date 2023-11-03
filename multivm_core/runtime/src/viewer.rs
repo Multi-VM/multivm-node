@@ -35,7 +35,7 @@ impl SupportedView {
 #[derive(BorshDeserialize, BorshSerialize)]
 enum Action {
     ExecuteTransaction(SupportedTransaction, EnvironmentContext),
-    View(SupportedView),
+    View(SupportedView, EnvironmentContext),
 }
 
 pub struct Viewer {
@@ -49,14 +49,16 @@ impl Viewer {
     }
 
     pub fn view(self) -> Vec<u8> {
-        let action = Action::View(self.view.clone());
+        let action = Action::View(self.view.clone(), EnvironmentContext {
+            block_height: 2, // TODO: hardcoded height
+        });
         let action_bytes = borsh::to_vec(&action).unwrap();
 
         let env = risc0_zkvm::ExecutorEnv::builder()
             .add_input(&risc0_zkvm::serde::to_vec(&action_bytes).unwrap())
             .session_limit(Some(usize::MAX))
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
-            .stdout(ContractLogger::new(self.view.contract_id()))
+            .stdout(ContractLogger::new(AccountId::system_meta_contract()))
             .build()
             .unwrap();
 

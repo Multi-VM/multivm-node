@@ -15,7 +15,7 @@ meta_contracts = { path = "../meta_contracts" }
 anyhow.workspace = true
 borsh.workspace = true
 
-risc0-zkvm = { version = "0.18.0", features = ["cuda"] }
+risc0-zkvm = { version = "0.18.0", features = ["prove"] }
 
 serde = { version = "1.0.171", features = ["derive"] }
 tracing = "0.1.36"
