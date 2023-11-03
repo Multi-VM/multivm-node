@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use eth_primitive_types::H160;
+use k256::ecdsa::VerifyingKey;
 use multivm_primitives::{
     k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
-    Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction, Transaction,
+    Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction, Transaction, SupportedTransaction,
 };
 use multivm_runtime::MultivmNode;
 use rand::rngs::OsRng;
@@ -43,7 +45,7 @@ pub fn init_temp_node() -> MultivmNode {
 }
 
 pub struct NodeHelper {
-    node: MultivmNode,
+    pub node: MultivmNode,
 
     keys: HashMap<AccountId, SigningKey>,
 }
@@ -116,6 +118,24 @@ impl NodeHelper {
         tx_hash
     }
 
+    pub fn create_evm_account(&mut self, multivm_account_id: &MultiVmAccountId, vk: VerifyingKey) -> H160 {
+        let latest_block = self.node.latest_block();
+        let tx = create_account_tx(
+            &latest_block,
+            multivm_account_id.clone(),
+            Self::super_account_id().into(),
+            &vk,
+        );
+        let tx =
+            SignedTransaction::new(tx, self.keys.get(&Self::super_account_id().into()).unwrap());
+
+        self.node.add_tx(tx.into());
+
+        let point = vk.to_encoded_point(false);
+        let hash = ethers_core::utils::keccak256(&point.as_bytes()[1..]);
+        eth_primitive_types::H160::from_slice(&hash[12..]).into()
+    }
+
     pub fn create_contract(
         &mut self,
         multivm_contract_id: &MultiVmAccountId,
@@ -162,7 +182,7 @@ impl NodeHelper {
 
         let tx_hash = tx.hash();
         let tx = SignedTransaction::new(tx, self.keys.get(signer_id).unwrap());
-        self.node.add_tx(tx.into());
+        self.node.add_tx(SupportedTransaction::MultiVm(tx.into()));
 
         tx_hash
     }

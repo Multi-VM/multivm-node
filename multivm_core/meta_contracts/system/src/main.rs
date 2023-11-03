@@ -1,9 +1,11 @@
 #![no_main]
 
 use core::panic;
+use std::str::FromStr;
 
 use account_management::update_account;
 use borsh::{BorshDeserialize, BorshSerialize};
+use eth_primitive_types::H160;
 use multivm_primitives::{
     AccountId, ContractCall, ContractCallContext, EnvironmentContext, EvmAddress, MultiVmAccountId,
     SignedTransaction, SupportedTransaction,
@@ -15,7 +17,7 @@ mod system_env;
 const TOKEN_DECIMALS: u32 = 18;
 const ONE_TOKEN: u128 = 10u128.pow(TOKEN_DECIMALS);
 
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Debug)]
 struct AccountCreationRequest {
     pub account_id: MultiVmAccountId,
     pub public_key: Vec<u8>,
@@ -42,7 +44,7 @@ enum SupportedView {
 #[derive(BorshDeserialize, BorshSerialize)]
 enum Action {
     ExecuteTransaction(SupportedTransaction, EnvironmentContext),
-    View(SupportedView),
+    View(SupportedView, EnvironmentContext),
 }
 risc0_zkvm::entry!(entrypoint);
 
@@ -56,14 +58,14 @@ fn entrypoint() {
             SupportedTransaction::MultiVm(tx) => process_transaction(tx, environment),
             SupportedTransaction::Evm(tx) => process_ethereum_transaction(tx, environment),
         },
-        Action::View(v) => match v {
+        Action::View(v, environment) => match v {
             SupportedView::MultiVm(context) => view(context),
-            SupportedView::Evm(call) => evm_call(call),
+            SupportedView::Evm(call) => evm_call(call, environment),
         },
     };
 }
 
-fn process_ethereum_transaction(bytes: Vec<u8>, _environment: EnvironmentContext) {
+fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext) {
     let rlp = ethers_core::utils::rlp::Rlp::new(&bytes);
     let (tx, sign) = ethers_core::types::TransactionRequest::decode_signed_rlp(&rlp).unwrap();
     if !sign
@@ -72,6 +74,16 @@ fn process_ethereum_transaction(bytes: Vec<u8>, _environment: EnvironmentContext
     {
         panic!("Invalid signature");
     }
+
+    let contract_call = ContractCall { method: "".to_string(), args: vec![], gas: 300_000, deposit: 0 };
+    let ctx = ContractCallContext {
+        contract_id: AccountId::system_meta_contract(),
+        contract_call,
+        sender_id: AccountId::system_meta_contract(),
+        signer_id: AccountId::system_meta_contract(),
+        environment,
+    };
+    system_env::setup_env(&ctx);
 
     let caller = account_management::account(&EvmAddress::from(tx.from.unwrap()).into())
         .expect("Caller not found"); // TODO: handle error
@@ -97,7 +109,17 @@ fn view(context: ContractCallContext) {
     }
 }
 
-fn evm_call(call: EvmCall) {
+fn evm_call(call: EvmCall, environment: EnvironmentContext) {
+    let contract_call = ContractCall { method: "".to_string(), args: vec![], gas: 300_000, deposit: 0 };
+    let ctx = ContractCallContext {
+        contract_id: AccountId::system_meta_contract(),
+        contract_call,
+        sender_id: AccountId::system_meta_contract(),
+        signer_id: AccountId::system_meta_contract(),
+        environment,
+    };
+    system_env::setup_env(&ctx);
+
     let caller = account_management::account(
         &EvmAddress::from(eth_primitive_types::H160::from_slice(&call.from)).into(),
     )
@@ -170,6 +192,7 @@ fn create_account(call: ContractCall) {
         .expect("Not enough balance"); // TODO: handle error
 
     account.balance = account.balance.checked_add(1_000 * ONE_TOKEN).unwrap();
+
     update_account(account);
     update_account(caller);
 
@@ -223,7 +246,7 @@ mod account_management {
 
     use crate::system_env;
 
-    #[derive(BorshDeserialize, BorshSerialize, Clone)]
+    #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
     pub struct Account {
         internal_id: u128,
         pub evm_address: EvmAddress,

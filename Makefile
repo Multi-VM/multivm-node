@@ -1,6 +1,6 @@
 r:
 	cd example_contracts && cargo build --release
-	cd multivm_core && RUST_LOG=info cargo run --release --bin example_token
+	cd multivm_core && RUST_LOG=info cargo run --release --bin benchmarks
 
 rf:
 	cd example_contracts && cargo build --release

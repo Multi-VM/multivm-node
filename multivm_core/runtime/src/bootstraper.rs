@@ -10,7 +10,7 @@ use multivm_primitives::{
     AccountId, Attachments, ContractCallContext, EnvironmentContext, SupportedTransaction,
 };
 
-use crate::{executor::Executor, outcome::ExecutionOutcome, utils};
+use crate::{executor::{Executor, ContractLogger}, outcome::ExecutionOutcome, utils};
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -69,6 +69,7 @@ impl Bootstraper {
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
             .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
             .io_callback(DEPLOY_CONTRACT_CALL, self.callback_on_contract_deployment())
+            .stdout(ContractLogger::new(AccountId::system_meta_contract()))
             .build()
             .unwrap();
 
