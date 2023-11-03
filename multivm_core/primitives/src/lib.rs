@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::ecdsa::signature::{Signer, Verifier};
+use k256::ecdsa::signature::Verifier;
 use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use serde::{Deserialize, Serialize};
 
@@ -446,16 +446,19 @@ pub struct Attachments {
 pub struct SignedTransaction {
     pub transaction: Transaction,
     pub signature: Vec<u8>,
+    pub recovery_id: u8,
     /// Unsigned attachments
     pub attachments: Option<Attachments>,
 }
 
 impl SignedTransaction {
     pub fn new(transaction: Transaction, private_key: &k256::ecdsa::SigningKey) -> Self {
-        let signature: k256::ecdsa::Signature = private_key.try_sign(&transaction.bytes()).unwrap();
+        let (signature, recovery_id) = private_key.sign_recoverable(&transaction.bytes()).unwrap();
+
         Self {
             transaction,
             signature: signature.to_vec(),
+            recovery_id: recovery_id.to_byte(),
             attachments: None,
         }
     }
@@ -465,11 +468,11 @@ impl SignedTransaction {
         private_key: &k256::ecdsa::SigningKey,
         attachments: Attachments,
     ) -> Self {
-        let signature: k256::ecdsa::Signature = private_key.try_sign(&transaction.bytes()).unwrap();
-        // let signature = private_key.sign(&transaction.bytes()).to_bytes().to_vec();
+        let (signature, recovery_id) = private_key.sign_recoverable(&transaction.bytes()).unwrap();
         Self {
             transaction,
             signature: signature.to_vec(),
+            recovery_id: recovery_id.to_byte(),
             attachments: Some(attachments),
         }
     }
@@ -480,6 +483,17 @@ impl SignedTransaction {
         public_key
             .verify(&self.transaction.bytes(), &signature)
             .is_ok()
+    }
+
+    pub fn recover(&self) -> Option<k256::ecdsa::VerifyingKey> {
+        let signature = k256::ecdsa::Signature::from_slice(&self.signature).unwrap();
+        let bytes = &self.transaction.bytes();
+        k256::ecdsa::VerifyingKey::recover_from_msg(
+            &bytes,
+            &signature,
+            self.recovery_id.try_into().unwrap(),
+        )
+        .ok()
     }
 }
 

@@ -23,7 +23,7 @@ fn main() {
     ];
 
     for bench in benches {
-        for skip_proof in [true] {
+        for skip_proof in [true, false] {
             let t = bench.1(skip_proof);
             println!(
                 "{} ({}): {:.2}s",

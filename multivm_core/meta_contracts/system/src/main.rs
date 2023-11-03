@@ -1,11 +1,9 @@
 #![no_main]
 
 use core::panic;
-use std::str::FromStr;
 
 use account_management::update_account;
 use borsh::{BorshDeserialize, BorshSerialize};
-use eth_primitive_types::H160;
 use multivm_primitives::{
     AccountId, ContractCall, ContractCallContext, EnvironmentContext, EvmAddress, MultiVmAccountId,
     SignedTransaction, SupportedTransaction,
@@ -30,7 +28,7 @@ struct ContractDeploymentArgs {
 
 #[derive(BorshDeserialize, BorshSerialize)]
 struct EvmCall {
-    pub from: [u8; 20],
+    pub from: Option<[u8; 20]>,
     pub to: [u8; 20],
     pub input: Vec<u8>,
 }
@@ -75,7 +73,12 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
         panic!("Invalid signature");
     }
 
-    let contract_call = ContractCall { method: "".to_string(), args: vec![], gas: 300_000, deposit: 0 };
+    let contract_call = ContractCall {
+        method: "".to_string(),
+        args: vec![],
+        gas: 300_000,
+        deposit: 0,
+    };
     let ctx = ContractCallContext {
         contract_id: AccountId::system_meta_contract(),
         contract_call,
@@ -92,7 +95,7 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
         evm::deploy_evm_contract(caller, tx.data.expect("No data").to_vec());
     } else {
         evm::call_contract(
-            caller,
+            caller.evm_address,
             EvmAddress::from(tx.to.unwrap().as_address().unwrap().clone()),
             tx.data.expect("No data").to_vec(),
             true,
@@ -110,7 +113,12 @@ fn view(context: ContractCallContext) {
 }
 
 fn evm_call(call: EvmCall, environment: EnvironmentContext) {
-    let contract_call = ContractCall { method: "".to_string(), args: vec![], gas: 300_000, deposit: 0 };
+    let contract_call = ContractCall {
+        method: "".to_string(),
+        args: vec![],
+        gas: 300_000,
+        deposit: 0,
+    };
     let ctx = ContractCallContext {
         contract_id: AccountId::system_meta_contract(),
         contract_call,
@@ -120,13 +128,12 @@ fn evm_call(call: EvmCall, environment: EnvironmentContext) {
     };
     system_env::setup_env(&ctx);
 
-    let caller = account_management::account(
-        &EvmAddress::from(eth_primitive_types::H160::from_slice(&call.from)).into(),
-    )
-    .expect("Caller not found"); // TODO: handle error
-
+    let caller_address = call
+        .from
+        .map(|from| eth_primitive_types::H160::from(from))
+        .unwrap_or_default();
     let contract_address = eth_primitive_types::H160::from_slice(&call.to).into();
-    evm::call_contract(caller, contract_address, call.input, false)
+    evm::call_contract(caller_address.into(), contract_address, call.input, false)
 }
 
 // TODO: remove this
@@ -152,8 +159,14 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
 
         let signer = account_management::account(&signer_id).expect("Signer not found"); // TODO: handle error
 
+        let pk = match signer.public_key {
+            Some(pk) => pk.as_slice().try_into().unwrap(),
+            // TODO: check address
+            None => signed_tx.recover().unwrap(),
+        };
+
         // TODO: handle None in public key
-        if !signed_tx.verify(signer.public_key.unwrap().as_slice().try_into().unwrap()) {
+        if !signed_tx.verify(pk) {
             panic!("Invalid signature"); // TODO: handle error
         }
     }
@@ -161,6 +174,7 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
     let SignedTransaction {
         transaction: tx,
         signature: _,
+        recovery_id: _,
         attachments: _,
     } = signed_tx;
 

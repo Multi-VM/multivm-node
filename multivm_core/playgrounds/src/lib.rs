@@ -91,6 +91,7 @@ impl NodeHelper {
             transaction: tx,
             signature: Default::default(),
             attachments: None,
+            recovery_id: 0,
         };
 
         self.node.add_tx(tx.into());
