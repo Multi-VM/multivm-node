@@ -9,6 +9,8 @@ pub mod syscalls;
 
 use std::collections::HashMap;
 
+pub const CHAIN_ID: u64 = 1044942;
+
 #[derive(
     Serialize,
     Deserialize,
@@ -416,6 +418,19 @@ impl Transaction {
             signer_id: self.signer_id.clone(),
             environment,
         }
+    }
+
+    pub fn all_contexts(&self, environment: EnvironmentContext) -> Vec<ContractCallContext> {
+        self.calls
+            .iter()
+            .map(|call| ContractCallContext {
+                contract_id: self.receiver_id.clone(),
+                contract_call: call.clone(),
+                sender_id: self.signer_id.clone(),
+                signer_id: self.signer_id.clone(),
+                environment: environment.clone(),
+            })
+            .collect()
     }
 }
 
