@@ -10,7 +10,12 @@ use multivm_primitives::{
     AccountId, Attachments, ContractCallContext, EnvironmentContext, SupportedTransaction,
 };
 
-use crate::{executor::{Executor, ContractLogger}, outcome::ExecutionOutcome, utils};
+use crate::{
+    executor::{ContractLogger, Executor},
+    outcome::ExecutionOutcome,
+    utils,
+    viewer::SupportedView,
+};
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -18,9 +23,11 @@ const MAX_MEMORY: u32 = 0x10000000;
 const PAGE_SIZE: u32 = 0x400;
 
 #[derive(BorshDeserialize, BorshSerialize)]
-enum Action {
+pub enum Action {
     ExecuteTransaction(SupportedTransaction, EnvironmentContext),
-    View(ContractCallContext),
+    View(SupportedView, EnvironmentContext),
+    Call(ContractCallContext),
+    EvmCall(ContractCallContext),
 }
 
 pub struct Bootstraper {

@@ -11,7 +11,7 @@ use multivm_primitives::{
     AccountId, ContractCallContext,
 };
 
-use crate::{outcome::ExecutionOutcome, utils};
+use crate::{bootstraper::Action, outcome::ExecutionOutcome, utils};
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -34,7 +34,26 @@ impl Executor {
     }
 
     pub fn execute(self) -> ExecutionOutcome {
-        let call_bytes = borsh::to_vec(&self.context).unwrap();
+        let (call_bytes, elf) = match self.context.contract_id.clone() {
+            AccountId::MultiVm(contract_id) => {
+                if self.context.contract_id != AccountId::system_meta_contract() {
+                    let elf = self
+                        .load_contract(contract_id.into())
+                        .context(format!("Load contract {:?}", self.context.contract_id))
+                        .unwrap();
+                    (borsh::to_vec(&self.context).unwrap(), elf)
+                } else {
+                    let elf = meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec();
+                    let call = Action::Call(self.context.clone());
+                    (borsh::to_vec(&call).unwrap(), elf)
+                }
+            }
+            AccountId::Evm(_contract_address) => {
+                let elf = meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec();
+                let call = Action::EvmCall(self.context.clone());
+                (borsh::to_vec(&call).unwrap(), elf)
+            }
+        };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
             .add_input(&risc0_zkvm::serde::to_vec(&call_bytes).unwrap())
@@ -44,11 +63,6 @@ impl Executor {
             .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
             .stdout(ContractLogger::new(self.context.contract_id.clone()))
             .build()
-            .unwrap();
-
-        let elf = self
-            .load_contract(self.context.contract_id.clone())
-            .context(format!("Load contract {:?}", self.context.contract_id))
             .unwrap();
 
         info!(contract = ?self.context.contract_id, size = ?elf.len(), "Executing contract");

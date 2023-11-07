@@ -43,6 +43,8 @@ enum SupportedView {
 enum Action {
     ExecuteTransaction(SupportedTransaction, EnvironmentContext),
     View(SupportedView, EnvironmentContext),
+    Call(ContractCallContext),
+    EvmCall(ContractCallContext),
 }
 risc0_zkvm::entry!(entrypoint);
 
@@ -58,18 +60,20 @@ fn entrypoint() {
         },
         Action::View(v, environment) => match v {
             SupportedView::MultiVm(context) => view(context),
-            SupportedView::Evm(call) => evm_call(call, environment),
+            SupportedView::Evm(call) => evm_view_call(call, environment),
         },
+        Action::Call(ctx) => {
+            system_env::setup_env(&ctx);
+            process_call(ctx.contract_call)
+        }
+        Action::EvmCall(ctx) => evm_call(ctx),
     };
 }
 
 fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext) {
     let rlp = ethers_core::utils::rlp::Rlp::new(&bytes);
     let (tx, sign) = ethers_core::types::TransactionRequest::decode_signed_rlp(&rlp).unwrap();
-    if !sign
-        .verify(tx.rlp_unsigned().to_vec(), tx.from.unwrap())
-        .is_ok()
-    {
+    if !sign.verify(tx.sighash(), tx.from.unwrap()).is_ok() {
         panic!("Invalid signature");
     }
 
@@ -97,7 +101,7 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
         evm::call_contract(
             caller.evm_address,
             EvmAddress::from(tx.to.unwrap().as_address().unwrap().clone()),
-            tx.data.expect("No data").to_vec(),
+            tx.data.unwrap_or_default().to_vec(),
             true,
         );
     }
@@ -112,7 +116,7 @@ fn view(context: ContractCallContext) {
     }
 }
 
-fn evm_call(call: EvmCall, environment: EnvironmentContext) {
+fn evm_view_call(call: EvmCall, environment: EnvironmentContext) {
     let contract_call = ContractCall {
         method: "".to_string(),
         args: vec![],
@@ -136,6 +140,21 @@ fn evm_call(call: EvmCall, environment: EnvironmentContext) {
     evm::call_contract(caller_address.into(), contract_address, call.input, false)
 }
 
+fn evm_call(ctx: ContractCallContext) {
+    system_env::setup_env(&ctx);
+
+    let caller = account_management::account(&system_env::caller()).expect("Caller not found"); // TODO: handle error
+    let contract =
+        account_management::account(&system_env::contract()).expect("Contract not found"); // TODO: handle error
+
+    evm::call_contract(
+        caller.evm_address,
+        contract.evm_address,
+        ctx.contract_call.args,
+        true,
+    )
+}
+
 // TODO: remove this
 fn init_debug_account(public_key: Vec<u8>) {
     let mut account = account_management::Account::try_create(
@@ -148,7 +167,7 @@ fn init_debug_account(public_key: Vec<u8>) {
 }
 
 fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentContext) {
-    let ctx = signed_tx.transaction.context(0, environment);
+    let ctx = signed_tx.transaction.context(0, environment.clone());
 
     system_env::setup_env(&ctx);
 
@@ -180,17 +199,21 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
 
     if tx.receiver_id == AccountId::system_meta_contract() {
         for call in tx.calls {
-            match call.method.as_str() {
-                "create_account" => create_account(call),
-                "deploy_contract" => deploy_contract(call),
-                "init_debug_account" => init_debug_account(call.try_deserialize_args().unwrap()),
-                _ => panic!("Method not found"),
-            }
+            process_call(call);
         }
     } else {
         for call in tx.calls {
             contract_call(call);
         }
+    }
+}
+
+fn process_call(call: ContractCall) {
+    match call.method.as_str() {
+        "create_account" => create_account(call),
+        "deploy_contract" => deploy_contract(call),
+        "init_debug_account" => init_debug_account(call.try_deserialize_args().unwrap()),
+        _ => panic!("Method not found"),
     }
 }
 
