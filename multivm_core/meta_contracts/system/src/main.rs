@@ -97,6 +97,10 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
 
     if tx.to.is_none() {
         evm::deploy_evm_contract(caller, tx.data.expect("No data").to_vec());
+    } else if tx.data.is_none() {
+        let value = tx.value.expect("Empty transaction!").as_u128();
+        let to = tx.to.unwrap().as_address().unwrap().clone();
+        account_management::transfer(caller, to, value);
     } else {
         evm::call_contract(
             caller.evm_address,
@@ -278,6 +282,7 @@ fn contract_call(call: ContractCall) {
 
 mod account_management {
     use borsh::{BorshDeserialize, BorshSerialize};
+    use eth_primitive_types::H160;
     use ethers_core::k256::elliptic_curve::sec1::ToEncodedPoint;
     use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId};
 
@@ -432,6 +437,17 @@ mod account_management {
             panic!("Account update requires existing account");
         }
         system_env::set_storage(format!("accounts.{}", account.internal_id), account);
+    }
+
+    pub fn transfer(mut from: Account, to_address: H160, amount: u128) {
+        from.balance -= amount;
+        update_account(from);
+
+        let mut to = account(&EvmAddress::from(to_address).into()).expect("Receiver not found");
+        to.balance += amount;        
+        update_account(to);
+        
+        system_env::commit(());
     }
 
     pub fn account_storage<T: BorshDeserialize>(account_id: &AccountId, key: String) -> Option<T> {
