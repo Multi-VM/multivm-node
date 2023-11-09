@@ -2,12 +2,14 @@
 
 use core::panic;
 
-use account_management::update_account;
+use account_management::{update_account, MultiVmExecutable};
 use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{
     AccountId, ContractCall, ContractCallContext, EnvironmentContext, EvmAddress, MultiVmAccountId,
     SignedTransaction, SupportedTransaction,
 };
+
+use crate::account_management::Executable;
 
 mod evm;
 mod system_env;
@@ -64,9 +66,12 @@ fn entrypoint() {
         },
         Action::Call(ctx) => {
             system_env::setup_env(&ctx);
-            process_call(ctx.contract_call)
+            process_call(ctx.contract_id, ctx.contract_call)
         }
-        Action::EvmCall(ctx) => evm_call(ctx),
+        Action::EvmCall(ctx) => {
+            system_env::setup_env(&ctx);
+            evm_call(ctx)
+        }
     };
 }
 
@@ -95,19 +100,56 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
     let caller = account_management::account(&EvmAddress::from(tx.from.unwrap()).into())
         .expect("Caller not found"); // TODO: handle error
 
-    if tx.to.is_none() {
-        evm::deploy_evm_contract(caller, tx.data.expect("No data").to_vec());
-    } else if tx.data.is_none() {
-        let value = tx.value.expect("Empty transaction!").as_u128();
-        let to = tx.to.unwrap().as_address().unwrap().clone();
-        account_management::transfer(caller, to, value);
-    } else {
-        evm::call_contract(
-            caller.evm_address,
-            EvmAddress::from(tx.to.unwrap().as_address().unwrap().clone()),
-            tx.data.unwrap_or_default().to_vec(),
-            true,
-        );
+    match tx.processing_flow() {
+        EthereumTxFlow::Deploy(bytecode) => evm::deploy_evm_contract(caller, bytecode),
+        EthereumTxFlow::Transfer(receiver, amount) => {
+            account_management::transfer(caller, receiver.into(), amount)
+        }
+        EthereumTxFlow::Call(contract_id, data) => {
+            let contract = account_management::account(&contract_id.clone().into()).unwrap();
+            match contract.executable {
+                Some(Executable::Evm()) => {
+                    evm::call_contract(caller.evm_address, contract_id, data, true)
+                }
+                Some(Executable::MultiVm(_)) => {
+                    process_call(contract_id.into(), borsh::from_slice(&data).unwrap())
+                }
+                _ => panic!("Executable not supported"),
+            }
+        }
+    };
+}
+
+enum EthereumTxFlow {
+    Deploy(Vec<u8>),
+    Transfer(EvmAddress, u128),
+    Call(EvmAddress, Vec<u8>),
+}
+
+trait TransactionFlow<T> {
+    fn processing_flow(self) -> T;
+}
+
+impl TransactionFlow<EthereumTxFlow>
+    for ethers_core::types::transaction::request::TransactionRequest
+{
+    fn processing_flow(self) -> EthereumTxFlow {
+        use ethers_core::types::NameOrAddress;
+
+        let receiver_id: EvmAddress = match self.to {
+            None => return EthereumTxFlow::Deploy(self.data.unwrap().to_vec()),
+            Some(NameOrAddress::Address(address)) => address.into(),
+            _ => panic!("Not supported"),
+        };
+
+        let value: u128 = self.value.unwrap().try_into().unwrap();
+
+        let data = match self.data {
+            None => return EthereumTxFlow::Transfer(receiver_id, value),
+            Some(data) => data.to_vec(),
+        };
+
+        EthereumTxFlow::Call(receiver_id, data)
     }
 }
 
@@ -145,8 +187,6 @@ fn evm_view_call(call: EvmCall, environment: EnvironmentContext) {
 }
 
 fn evm_call(ctx: ContractCallContext) {
-    system_env::setup_env(&ctx);
-
     let caller = account_management::account(&system_env::caller()).expect("Caller not found"); // TODO: handle error
     let contract =
         account_management::account(&system_env::contract()).expect("Contract not found"); // TODO: handle error
@@ -201,23 +241,21 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
         attachments: _,
     } = signed_tx;
 
-    if tx.receiver_id == AccountId::system_meta_contract() {
-        for call in tx.calls {
-            process_call(call);
-        }
-    } else {
-        for call in tx.calls {
-            contract_call(call);
-        }
+    for call in tx.calls {
+        process_call(tx.receiver_id.clone(), call);
     }
 }
 
-fn process_call(call: ContractCall) {
-    match call.method.as_str() {
-        "create_account" => create_account(call),
-        "deploy_contract" => deploy_contract(call),
-        "init_debug_account" => init_debug_account(call.try_deserialize_args().unwrap()),
-        _ => panic!("Method not found"),
+fn process_call(contract_id: AccountId, call: ContractCall) {
+    if contract_id == AccountId::system_meta_contract() {
+        match call.method.as_str() {
+            "create_account" => create_account(call),
+            "deploy_contract" => deploy_multivm_contract(call),
+            "init_debug_account" => init_debug_account(call.try_deserialize_args().unwrap()),
+            _ => panic!("Method not found"),
+        }
+    } else {
+        contract_call(contract_id, call);
     }
 }
 
@@ -246,24 +284,25 @@ fn account_info(context: ContractCallContext) {
     system_env::commit(account)
 }
 
-fn deploy_contract(call: ContractCall) {
+fn deploy_multivm_contract(call: ContractCall) {
     let req: ContractDeploymentArgs = call.try_deserialize_args().unwrap();
     let mut account =
         account_management::account(&system_env::signer()).expect("Account not found"); // TODO: handle error
 
     system_env::deploy_contract(system_env::signer(), req.image_id);
-    account.image_id = Some(req.image_id);
+    account.executable = Some(
+        MultiVmExecutable {
+            image_id: req.image_id,
+        }
+        .into(),
+    );
     update_account(account);
     system_env::commit(());
 }
 
-fn contract_call(call: ContractCall) {
-    let commitment = system_env::cross_contract_call_raw(
-        system_env::contract(),
-        call.method,
-        call.gas,
-        call.args,
-    );
+fn contract_call(contract_id: AccountId, call: ContractCall) {
+    let commitment =
+        system_env::cross_contract_call_raw(contract_id, call.method, call.gas, call.args);
 
     let signer_id = system_env::signer();
     let mut signer = account_management::account(&signer_id).expect("Signer account not found"); // TODO: handle error
@@ -282,11 +321,27 @@ fn contract_call(call: ContractCall) {
 
 mod account_management {
     use borsh::{BorshDeserialize, BorshSerialize};
-    use eth_primitive_types::H160;
     use ethers_core::k256::elliptic_curve::sec1::ToEncodedPoint;
     use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId};
 
     use crate::system_env;
+
+    #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+    pub enum Executable {
+        Evm(),
+        MultiVm(MultiVmExecutable),
+    }
+
+    impl From<MultiVmExecutable> for Executable {
+        fn from(executable: MultiVmExecutable) -> Self {
+            Self::MultiVm(executable)
+        }
+    }
+
+    #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+    pub struct MultiVmExecutable {
+        pub image_id: [u32; 8],
+    }
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
     pub struct Account {
@@ -294,7 +349,7 @@ mod account_management {
         pub evm_address: EvmAddress,
         pub multivm_account_id: Option<MultiVmAccountId>,
         pub public_key: Option<Vec<u8>>,
-        pub image_id: Option<[u32; 8]>,
+        pub executable: Option<Executable>,
         pub balance: u128,
         pub nonce: u64,
     }
@@ -329,7 +384,7 @@ mod account_management {
                 public_key: Some(public_key),
                 evm_address,
                 multivm_account_id,
-                image_id: None,
+                executable: None,
                 balance: 0,
                 nonce: 0,
             };
@@ -348,7 +403,7 @@ mod account_management {
                 public_key: None,
                 evm_address,
                 multivm_account_id: None,
-                image_id: None,
+                executable: None,
                 balance: 0,
                 nonce: 0,
             };
@@ -439,14 +494,14 @@ mod account_management {
         system_env::set_storage(format!("accounts.{}", account.internal_id), account);
     }
 
-    pub fn transfer(mut from: Account, to_address: H160, amount: u128) {
-        from.balance -= amount;
-        update_account(from);
+    pub fn transfer(mut sender: Account, receiver_id: AccountId, amount: u128) {
+        sender.balance -= amount;
+        update_account(sender);
 
-        let mut to = account(&EvmAddress::from(to_address).into()).expect("Receiver not found");
-        to.balance += amount;        
-        update_account(to);
-        
+        let mut receiver = account(&receiver_id).expect("Receiver not found");
+        receiver.balance += amount;
+        update_account(receiver);
+
         system_env::commit(());
     }
 
