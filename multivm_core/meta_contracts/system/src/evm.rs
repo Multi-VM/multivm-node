@@ -1,5 +1,5 @@
 use crate::{
-    account_management::{self, Account},
+    account_management::{self, Account, Executable},
     system_env,
 };
 use eth_primitive_types::{H160, H256, U256};
@@ -35,7 +35,7 @@ pub fn deploy_evm_contract(owner: Account, code: Vec<u8>) {
 
     let owner_address = owner.evm_address.into();
 
-    let token_address = executor.create_address(evm::CreateScheme::Legacy {
+    let contract_address = executor.create_address(evm::CreateScheme::Legacy {
         caller: owner_address,
     });
 
@@ -45,7 +45,7 @@ pub fn deploy_evm_contract(owner: Account, code: Vec<u8>) {
     let (a, b) = s.deconstruct();
     backend.apply(a, b, false);
 
-    system_env::commit(((token_address.to_fixed_bytes()), reason.1));
+    system_env::commit(((contract_address.to_fixed_bytes()), reason.1));
 }
 
 pub fn call_contract(
@@ -249,7 +249,6 @@ impl<'vicinity> ApplyBackend for EvmMemoryBackend<'vicinity> {
                                 });
                         account.balance = basic.balance.as_u128();
                         account.nonce = basic.nonce.as_u64();
-                        account_management::update_account(account);
 
                         if let Some(code) = code {
                             account_management::update_account_storage(
@@ -257,7 +256,11 @@ impl<'vicinity> ApplyBackend for EvmMemoryBackend<'vicinity> {
                                 CODE_KEY.into(),
                                 code,
                             );
+
+                            account.executable = Some(Executable::Evm());
                         }
+
+                        account_management::update_account(account);
 
                         if reset_storage {
                             let empty_state = BTreeMap::<H256, H256>::new();
