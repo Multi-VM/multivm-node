@@ -16,7 +16,7 @@ async function main() {
   if (create_accounts) {
     console.log("Creating evm accounts...");
     create_account("user1.multivm", signingKey1.publicKey);
-    create_account("user2.multivm", signingKey2.publicKey);    
+    create_account("user2.multivm", signingKey2.publicKey);
     token = await ethers.deployContract("Token");
   } else {
     token = await ethers.getContractAt("Token", "0x1029E07C605e94E2Ae3c6E6E4B8B47c959696545");
@@ -40,7 +40,7 @@ async function main() {
   console.log(user1.address, ": ", await token.balanceOf(user1.address));
   console.log(user2.address, ": ", await token.balanceOf(user2.address));
 }
-  
+
 main()
   .then(() => process.exit(0))
   .catch((error) => {
@@ -50,7 +50,7 @@ main()
 
 function call(method, params) {
   var request = require('sync-request');
-  const response = request('POST', 'http://127.0.0.1:80/', {
+  const response = request('POST', 'http://127.0.0.1:8080/', {
     headers: {
       'Content-Type': 'application/json',
     },

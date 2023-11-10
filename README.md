@@ -22,3 +22,10 @@ cargo run --release --bin erc20
 # or
 cargo run --release --bin example_token
 ```
+## Docker
+
+```sh
+docker build -t multivm .
+
+docker run -d -p 8080:8080 multivm
+```
