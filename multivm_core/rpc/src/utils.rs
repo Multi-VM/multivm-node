@@ -1,4 +1,4 @@
-use eth_primitive_types::{H160, U256, H256};
+use eth_primitive_types::{H160, H256, U256};
 use ethers_core::types::{Signature, TransactionRequest};
 use multivm_primitives::{Block, Digest, SupportedTransaction};
 use serde::{Deserialize, Serialize};
@@ -208,7 +208,6 @@ impl EthTransaction {
         }
     }
 }
-
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
