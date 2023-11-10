@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use multivm_primitives::{
-    Block, Commitment, Digest, SupportedTransaction,
-};
+use multivm_primitives::{Block, Commitment, Digest, SupportedTransaction};
 use tracing::info;
 
 use crate::outcome::ExecutionOutcome;

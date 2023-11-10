@@ -5,7 +5,8 @@ use eth_primitive_types::H160;
 use k256::ecdsa::VerifyingKey;
 use multivm_primitives::{
     k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
-    Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction, Transaction, SupportedTransaction,
+    Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction,
+    SupportedTransaction, Transaction,
 };
 use multivm_runtime::MultivmNode;
 use rand::rngs::OsRng;
@@ -119,7 +120,11 @@ impl NodeHelper {
         tx_hash
     }
 
-    pub fn create_evm_account(&mut self, multivm_account_id: &MultiVmAccountId, vk: VerifyingKey) -> H160 {
+    pub fn create_evm_account(
+        &mut self,
+        multivm_account_id: &MultiVmAccountId,
+        vk: VerifyingKey,
+    ) -> H160 {
         let latest_block = self.node.latest_block();
         let tx = create_account_tx(
             &latest_block,

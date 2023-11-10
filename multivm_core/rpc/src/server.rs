@@ -7,16 +7,18 @@ use borsh::BorshDeserialize;
 use eth_primitive_types::H160;
 use ethers::{core::types::TransactionRequest, utils::rlp::Rlp};
 use ethers_core::k256::ecdsa::VerifyingKey;
+use hyper::Method;
 use jsonrpsee::server::Server;
 use jsonrpsee::RpcModule;
 use lazy_static::lazy_static;
-use multivm_primitives::{MultiVmAccountId, SupportedTransaction, AccountId};
+use multivm_primitives::{AccountId, MultiVmAccountId, SupportedTransaction};
 use multivm_runtime::viewer::{EvmCall, SupportedView};
 use playgrounds::NodeHelper;
 use serde_json::json;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
-use crate::utils::{EthBlockOutput, EthTransaction, From0x, To0x, EthTransactionReceipt};
+use crate::utils::{EthBlockOutput, EthTransaction, EthTransactionReceipt, From0x, To0x};
 
 static CHAIN_ID: u64 = 1044942;
 
@@ -32,7 +34,15 @@ impl MultivmServer {
         }
     }
     pub async fn start(&'static mut self) -> anyhow::Result<()> {
-        let server = Server::builder().build("0.0.0.0:8080").await?;
+        let cors = CorsLayer::new()
+            .allow_methods([Method::POST, Method::OPTIONS])
+            .allow_origin(Any)
+            .allow_headers([hyper::header::CONTENT_TYPE]);
+        let middleware = tower::ServiceBuilder::new().layer(cors);
+        let server = Server::builder()
+            .set_middleware(middleware)
+            .build("0.0.0.0:8080")
+            .await?;
         let mut module = RpcModule::new(());
 
         module.register_method("eth_chainId", |_, _| {
@@ -50,7 +60,11 @@ impl MultivmServer {
             let helper = self.helper.lock().unwrap();
             let address: H160 = params.sequence().next::<String>().unwrap().from_0x();
             let account = helper.account(&AccountId::Evm(address.into()));
-            info!("returned: {}, hex: {}", account.balance, account.balance.to_0x());
+            info!(
+                "returned: {}, hex: {}",
+                account.balance,
+                account.balance.to_0x()
+            );
             account.balance.to_0x()
         })?;
         module.register_method("eth_getBlockByNumber", |params, _| {
@@ -175,7 +189,7 @@ impl MultivmServer {
                 let block = helper.node.block_by_height(height).unwrap();
                 for tx in block.txs {
                     match tx {
-                        SupportedTransaction::MultiVm(_) => {},
+                        SupportedTransaction::MultiVm(_) => {}
                         SupportedTransaction::Evm(_) => {
                             tx_count += 1;
                         }
@@ -235,13 +249,14 @@ impl MultivmServer {
             let data = hex::decode(data_str).unwrap();
 
             let rlp = ethers_core::utils::rlp::Rlp::new(&data);
-            let (tx, sig) = ethers_core::types::TransactionRequest::decode_signed_rlp(&rlp).unwrap();
+            let (tx, sig) =
+                ethers_core::types::TransactionRequest::decode_signed_rlp(&rlp).unwrap();
 
             match sig.verify(tx.sighash(), tx.from.unwrap()) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(error) => info!("Invalid signature {:#?}", error),
             }
-            
+
             let tx = SupportedTransaction::Evm(data);
             let hash = tx.hash();
             node.add_tx(tx);
