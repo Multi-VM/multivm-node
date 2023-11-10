@@ -32,7 +32,7 @@ impl MultivmServer {
         }
     }
     pub async fn start(&'static mut self) -> anyhow::Result<()> {
-        let server = Server::builder().build("127.0.0.1:80").await?;
+        let server = Server::builder().build("0.0.0.0:8080").await?;
         let mut module = RpcModule::new(());
 
         module.register_method("eth_chainId", |_, _| {
