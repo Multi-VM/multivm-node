@@ -125,7 +125,7 @@ fn main() {
 
     info!("=== AMM code deployed");
 
-    let call = ContractCall::new_call("init", &"my spectacular string".to_string());
+    let call = ContractCall::new_call("init", &());
     let mut call_bytes: Vec<u8> = Vec::new();
     call.serialize(&mut call_bytes).unwrap();
 
