@@ -31,6 +31,11 @@ impl TokenContract {
         env::commit(())
     }
 
+    pub fn symbol() {
+        let state: TokenState = env::get_storage(String::from("root")).unwrap();
+        env::commit(state.ticker);
+    }
+
     pub fn balance_of(address: AccountId) {
         let state: TokenState = env::get_storage(String::from("root")).unwrap();
         let balance = state.balances.get(&address).unwrap_or(&0);
@@ -82,6 +87,25 @@ impl TokenContract {
         *sender_balance -= amount;
 
         let recipient_balance = state.balances.entry(recipient).or_insert(0);
+        *recipient_balance += amount;
+
+        env::set_storage(String::from("root"), state);
+        env::commit(())
+    }
+
+    pub fn transfer_from(input: (AccountId, u128)) {
+        let sender = input.0;
+        let amount = input.1;
+
+        let mut state: TokenState = env::get_storage(String::from("root")).unwrap();
+
+        let sender_balance = state.balances.entry(sender).or_insert(0);
+        if *sender_balance < amount {
+            panic!("Not enough tokens to transfer");
+        }
+        *sender_balance -= amount;
+
+        let recipient_balance = state.balances.entry(env::caller()).or_insert(0);
         *recipient_balance += amount;
 
         env::set_storage(String::from("root"), state);

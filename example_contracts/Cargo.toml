@@ -7,7 +7,7 @@ edition = "2021"
 risc0-build = { version = "0.18.0" }
 
 [package.metadata.risc0]
-methods = ["fibonacci", "token"]
+methods = ["fibonacci", "token", "amm"]
 
 # Always optimize; building and running the guest takes much longer without optimization.
 [profile.dev]

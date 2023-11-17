@@ -236,11 +236,10 @@ impl MultivmServer {
             let params_str = format!("{:#?}", params);
             info!(
                 "eth_sendRawTransaction {:#?}",
-                if params_str.len() > 100 {
-                    "<params too long>"
-                } else {
-                    params_str.as_str()
-                }
+                // if params_str.len() > 100 {
+                //     "<params too long>"
+                // } else {
+                params_str.as_str() // }
             );
 
             let data_str: String = params.sequence().next::<String>().unwrap().from_0x();
@@ -278,6 +277,21 @@ impl MultivmServer {
             let account = helper.create_evm_account(&multivm, vk);
             info!("=== Account added: {:#?}", account);
             account.to_0x()
+        })?;
+
+        module.register_method("mvm_deployContract", |params, _| {
+            info!("mvm_deployContract");
+
+            let obj: HashMap<String, String> = params.sequence().next().unwrap();
+            let bytecode: Vec<u8> = obj.get("bytecode").unwrap().from_0x();
+            let multivm_name = obj.get("multivm").unwrap();
+            let multivm = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
+
+            let mut helper = self.helper.lock().unwrap();
+            helper.deploy_contract(&multivm, bytecode);
+            helper.produce_block(true);
+
+            "0x0"
         })?;
 
         module.register_method("eth_call", |params, _| {
