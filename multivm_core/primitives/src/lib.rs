@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use ethers_core::{types::TransactionRequest, utils::rlp::Rlp};
 use k256::ecdsa::signature::Verifier;
 use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use serde::{Deserialize, Serialize};
@@ -339,6 +340,18 @@ impl SupportedTransaction {
         match self {
             Self::MultiVm(tx) => tx.transaction.receiver_id == AccountId::system_meta_contract(),
             SupportedTransaction::Evm(_) => true,
+        }
+    }
+
+    pub fn signer(&self) -> AccountId {
+        match self {
+            Self::MultiVm(tx) => tx.transaction.signer_id.clone(),
+            SupportedTransaction::Evm(bytes) => {
+                let rlp = Rlp::new(bytes);
+                let (tx_request, _sig) = TransactionRequest::decode_signed_rlp(&rlp).unwrap();
+                let from = tx_request.from.unwrap();
+                AccountId::Evm(from.into())
+            }
         }
     }
 }

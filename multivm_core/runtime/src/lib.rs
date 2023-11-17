@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
-use multivm_primitives::{Block, EnvironmentContext, SupportedTransaction};
+use multivm_primitives::{Block, EnvironmentContext, MultiVmAccountId, SupportedTransaction};
 use tracing::{debug, info};
 use viewer::{SupportedView, Viewer};
 
@@ -92,7 +92,8 @@ impl MultivmNode {
             .iter()
             .map(|tx| {
                 let outcome =
-                    Bootstraper::new(self.db.clone(), tx.clone(), self.environment()).bootstrap();
+                    Bootstraper::new(self.db.clone(), tx.clone(), tx.signer(), self.environment())
+                        .bootstrap();
                 (tx.clone(), outcome)
             })
             .unzip();
