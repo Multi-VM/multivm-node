@@ -13,3 +13,4 @@ serde = { version = "1.0.171", features = ["derive"] }
 eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
 sha2 = "0.10"
 k256 = { version = "=0.13.1", features = ["arithmetic", "serde", "expose-field", "std", "ecdsa"], default_features = false }
+ethers-core = "2.0.10"

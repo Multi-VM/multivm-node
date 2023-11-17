@@ -2461,6 +2461,7 @@ name = "multivm_primitives"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ethers-core",
  "k256",
  "primitive-types",
  "risc0-zkvm",

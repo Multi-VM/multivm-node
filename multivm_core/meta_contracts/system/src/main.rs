@@ -66,7 +66,7 @@ fn entrypoint() {
         },
         Action::Call(ctx) => {
             system_env::setup_env(&ctx);
-            process_call(ctx.contract_id, ctx.contract_call)
+            process_call(ctx.clone().contract_id, ctx.clone().contract_call, ctx)
         }
         Action::EvmCall(ctx) => {
             system_env::setup_env(&ctx);
@@ -97,8 +97,8 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
     };
     system_env::setup_env(&ctx);
 
-    let caller = account_management::account(&EvmAddress::from(tx.from.unwrap()).into())
-        .expect("Caller not found"); // TODO: handle error
+    let caller = account_management::account(&EvmAddress::from(tx.from.expect("no 'from', probably tx is not signed")).into())
+        .expect(format!("Caller not found: {:#?}", tx.from).as_str()); // TODO: handle error
 
     match tx.processing_flow() {
         EthereumTxFlow::Deploy(bytecode) => evm::deploy_evm_contract(caller, bytecode),
@@ -112,7 +112,10 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
                     evm::call_contract(caller.evm_address, contract_id, data, true)
                 }
                 Some(Executable::MultiVm(_)) => {
-                    process_call(contract_id.into(), borsh::from_slice(&data).unwrap())
+                    let Some(multivm_contract_id) = contract.multivm_account_id else {
+                        panic!("Contract is MultiVM executable but has no multivm account");
+                    };
+                    process_call(multivm_contract_id.into(), borsh::from_slice(&data).unwrap(), ctx)
                 }
                 _ => panic!("Executable not supported"),
             }
@@ -222,14 +225,12 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
 
         let signer = account_management::account(&signer_id).expect("Signer not found"); // TODO: handle error
 
-        let pk = match signer.public_key {
-            Some(pk) => pk.as_slice().try_into().unwrap(),
-            // TODO: check address
-            None => signed_tx.recover().unwrap(),
-        };
-
-        // TODO: handle None in public key
-        if !signed_tx.verify(pk) {
+        // if both public key signature and address check are invalid
+        if !signer.public_key.map(|pk| { 
+            signed_tx.verify(pk.as_slice().try_into().unwrap())
+        }).unwrap_or(true) && !{
+            signed_tx.verify(signed_tx.recover().unwrap())
+        } {
             panic!("Invalid signature"); // TODO: handle error
         }
     }
@@ -242,16 +243,17 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
     } = signed_tx;
 
     for call in tx.calls {
-        process_call(tx.receiver_id.clone(), call);
+        process_call(tx.receiver_id.clone(), call, ctx.clone());
     }
 }
 
-fn process_call(contract_id: AccountId, call: ContractCall) {
+fn process_call(contract_id: AccountId, call: ContractCall, ctx: ContractCallContext) {
     if contract_id == AccountId::system_meta_contract() {
         match call.method.as_str() {
             "create_account" => create_account(call),
             "deploy_contract" => deploy_multivm_contract(call),
             "init_debug_account" => init_debug_account(call.try_deserialize_args().unwrap()),
+            "account_info" => account_info(ctx),
             _ => panic!("Method not found"),
         }
     } else {
@@ -305,16 +307,19 @@ fn contract_call(contract_id: AccountId, call: ContractCall) {
         system_env::cross_contract_call_raw(contract_id, call.method, call.gas, call.args);
 
     let signer_id = system_env::signer();
-    let mut signer = account_management::account(&signer_id).expect("Signer account not found"); // TODO: handle error
-    signer.balance = signer
-        .balance
-        .checked_sub(call.gas as u128)
-        .expect(&format!(
-            "Not enough balance for {} (balance {}, required {})",
-            signer_id, signer.balance, call.gas
-        ));
-
-    account_management::update_account(signer);
+    // if signer == system_meta then its multivm call in evm wrapper probably
+    if signer_id != AccountId::system_meta_contract() {
+        let mut signer = account_management::account(&signer_id).expect("Signer account not found"); // TODO: handle error
+        signer.balance = signer
+            .balance
+            .checked_sub(call.gas as u128)
+            .expect(&format!(
+                "Not enough balance for {} (balance {}, required {})",
+                signer_id, signer.balance, call.gas
+            ));
+    
+        account_management::update_account(signer);
+    }
 
     system_env::commit(commitment);
 }

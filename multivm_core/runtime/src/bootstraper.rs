@@ -33,6 +33,7 @@ pub enum Action {
 pub struct Bootstraper {
     db: sled::Db,
     transaction: SupportedTransaction,
+    signer_id: AccountId,
     attachments: Option<Attachments>,
     cross_calls_outcomes: Rc<RefCell<Vec<ExecutionOutcome>>>,
     environment: EnvironmentContext,
@@ -42,6 +43,7 @@ impl Bootstraper {
     pub fn new(
         db: sled::Db,
         transaction: SupportedTransaction,
+        signer_id: AccountId,
         environment: EnvironmentContext,
     ) -> Self {
         let attachments = match &transaction {
@@ -53,6 +55,7 @@ impl Bootstraper {
         Self {
             db,
             transaction,
+            signer_id,
             attachments,
             cross_calls_outcomes: Default::default(),
             environment,
@@ -139,16 +142,11 @@ impl Bootstraper {
             let req: CrossContractCallRequest = BorshDeserialize::try_from_slice(&from_guest)
                 .expect("Invalid contract call request");
 
-            // TODO: fix
-            let SupportedTransaction::MultiVm(multivm_tx) = self.transaction.clone() else {
-                panic!("Invalid transaction type");
-            };
-
             let call_context = ContractCallContext {
                 contract_id: req.contract_id,
                 contract_call: req.contract_call,
-                sender_id: multivm_tx.transaction.signer_id.clone(),
-                signer_id: multivm_tx.transaction.signer_id.clone(),
+                sender_id: self.signer_id.clone(),
+                signer_id: self.signer_id.clone(),
                 environment: self.environment.clone(),
             };
 

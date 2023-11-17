@@ -86,11 +86,7 @@ impl Viewer {
     }
 
     fn load_contract(&self, contract_id: AccountId) -> Result<Vec<u8>> {
-        let db_key = format!(
-            "committed_storage.{}.code.{}",
-            AccountId::system_meta_contract(),
-            contract_id.to_string(),
-        );
+        let db_key = format!("contracts_code.{}", contract_id.to_string());
 
         let code = self
             .db
@@ -98,8 +94,6 @@ impl Viewer {
             .expect("Failed to get storage from db")
             .map(|v| v.to_vec())
             .expect("Contract not found");
-
-        let code = BorshDeserialize::deserialize(&mut code.as_slice()).unwrap();
 
         Ok(code)
     }
