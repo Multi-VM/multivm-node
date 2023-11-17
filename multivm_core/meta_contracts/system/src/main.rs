@@ -115,7 +115,7 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
                     let Some(multivm_contract_id) = contract.multivm_account_id else {
                         panic!("Contract is MultiVM executable but has no multivm account");
                     };
-                    process_call(multivm_contract_id.into(), borsh::from_slice(&data).unwrap(), ctx)
+                    process_call(multivm_contract_id.into(), borsh::from_slice(&data).expect("multivm tx data was incorrectly serialized"), ctx)
                 }
                 _ => panic!("Executable not supported"),
             }

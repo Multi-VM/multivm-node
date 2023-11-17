@@ -158,7 +158,7 @@ impl EthBlockOutput {
             logs_bloom: format!("0x{}", (0..512).map(|_| "0").collect::<String>()),
             miner: String::default_address(),
             mix_hash: String::default_hash(),
-            nonce: String::default_zero(),
+            nonce: "0x0000000000000000".to_string(),
             number: block.height.to_0x(),
             parent_hash: block.parent_hash.to_0x(),
             receipts_root: block.previous_global_root.to_0x(),

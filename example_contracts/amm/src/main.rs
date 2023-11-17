@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 pub struct AmmContract;
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct State {
     pub pools: HashMap<u128, Pool>,
 }
@@ -54,11 +54,11 @@ pub struct Account {
 
 #[multivm_sdk_macros::contract]
 impl AmmContract {
-    pub fn init(input: String) {
+    pub fn init() {
         let state = State {
             pools: HashMap::new(),
         };
-        Self::save(state, input);
+        Self::save(state, ());
     }
 
     pub fn add_pool(tokens: (String, String)) {
@@ -133,7 +133,7 @@ impl AmmContract {
 
 impl AmmContract {
     fn load() -> State {
-        env::get_storage("root".to_string()).expect("Contract not initialized")
+        env::get_storage("root".to_string()).unwrap_or_default()
     }
 
     fn save<T: BorshSerialize>(state: State, output: T) {
