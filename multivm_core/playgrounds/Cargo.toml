@@ -6,6 +6,9 @@ edition = "2021"
 [[bin]]
 name = "benchmarks"
 
+[[bin]]
+name = "amm"
+
 [dependencies]
 multivm_runtime = { path = "../runtime" }
 multivm_primitives = { path = "../primitives" }

@@ -85,6 +85,12 @@ impl From0x<String> for String {
     }
 }
 
+impl From0x<Vec<u8>> for String {
+    fn from_0x(&self) -> Vec<u8> {
+        hex::decode(self).unwrap()
+    }
+}
+
 pub trait EthDefaults {
     fn default_hash() -> String;
     fn default_address() -> String;

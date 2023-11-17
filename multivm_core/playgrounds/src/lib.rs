@@ -126,6 +126,13 @@ impl NodeHelper {
         vk: VerifyingKey,
     ) -> H160 {
         let latest_block = self.node.latest_block();
+
+        // TODO: incorrect
+        let mut csprng = OsRng;
+        let sk = multivm_primitives::k256::ecdsa::SigningKey::random(&mut csprng);
+        self.keys
+            .insert(multivm_account_id.clone().into(), sk.clone());
+
         let tx = create_account_tx(
             &latest_block,
             multivm_account_id.clone(),

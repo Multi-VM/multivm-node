@@ -5,6 +5,7 @@
         "./multivm_sdk/Cargo.toml",
         "./example_contracts/Cargo.toml",
         "./example_contracts/token/Cargo.toml",
-        "./example_contracts/fibonacci/Cargo.toml"
+        "./example_contracts/fibonacci/Cargo.toml",
+        "./example_contracts/amm/Cargo.toml"
     ]
 }

@@ -1,7 +1,7 @@
 async function main() {
   const [user1, user2] = await ethers.getSigners();
 
-  const privateKey1 = "0x" + "b0c4d20fdb2eb44488a28a5e99020a05cb8ccf98c37819bafd219e84b4023ce4";
+  const privateKey1 = "0x" + "af1a53abf88f4821840a2934f3facfc8b1827cccd7f2e331375d2faf8c1032d2";
   const signingKey1 = new ethers.SigningKey(privateKey1);
   const user_addr1 = ethers.computeAddress(privateKey1);
 
@@ -9,19 +9,37 @@ async function main() {
   const signingKey2 = new ethers.SigningKey(privateKey2);
   const user_addr2 = ethers.computeAddress(privateKey2);
 
-  var token;
-  const create_accounts = 1;
-  // const create_accounts = 0;
+  console.log(user_addr1, user_addr2);
+  return;
 
-  if (create_accounts) {
+  var token;
+  let create_accounts = 1;
+  // create_accounts = 0;
+
+  // if (create_accounts) {
     console.log("Creating evm accounts...");
     create_account("user1.multivm", signingKey1.publicKey);
     create_account("user2.multivm", signingKey2.publicKey);
-    token = await ethers.deployContract("Token");
-  } else {
-    token = await ethers.getContractAt("Token", "0x1029E07C605e94E2Ae3c6E6E4B8B47c959696545");
-    await token.connect(user1).transfer(user_addr2, "3000");
-  }
+    // token = await ethers.deployContract("Token");
+  // } else {
+    const fs = require('fs');
+    const bytecode = fs.readFileSync("/Users/nikita/Develop/spin-node-wip/example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/token_contract");
+    deploy_contract("user1.multivm", toHexString(bytecode));
+
+    console.log("Calling token...");
+
+    token = await ethers.getContractAt("AMM", user_addr1);
+    let input = await token.connect(user1).init("my string");
+    console.log(input);
+    return;
+
+  //   return;
+
+  //   token = await ethers.getContractAt("Token", "0x1029E07C605e94E2Ae3c6E6E4B8B47c959696545");
+  //   await token.connect(user1).transfer(user_addr2, "3000");
+  // }
+
+  return;
 
   // const balance1 = await get_balance(user_addr1);
   // console.log(balance1);
@@ -73,4 +91,17 @@ function create_account(mvm, publicKey) {
 
 function get_balance(address) {
   return call("eth_getBalance", [address]);
+}
+
+function deploy_contract(mvm, bytecode) {
+  return call("mvm_deployContract", [{
+    "multivm": mvm,
+    "bytecode": bytecode,
+  }]);
+}
+
+function toHexString(byteArray) {
+  return Array.from(byteArray, function(byte) {
+    return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+  }).join('')
 }
