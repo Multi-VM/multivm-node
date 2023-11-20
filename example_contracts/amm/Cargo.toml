@@ -10,3 +10,4 @@ risc0-zkvm = { version = "0.18.0", default-features = false, features = [ "std" 
 multivm_sdk = { path = "../../multivm_sdk/sdk" }
 multivm_sdk_macros = { path = "../../multivm_sdk/macros" }
 borsh = { version = "1.0.0-alpha.6", features = ["derive"] }
+eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
