@@ -195,7 +195,7 @@ impl NodeHelper {
         self.node.produce_block(skip_proof)
     }
 
-    pub fn account(&self, account_id: &AccountId) -> Account {
+    pub fn account(&self, account_id: &AccountId) -> Option<Account> {
         let bytes = self
             .node
             .view(multivm_runtime::viewer::SupportedView::MultiVm(

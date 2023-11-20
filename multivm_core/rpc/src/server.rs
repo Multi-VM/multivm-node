@@ -59,12 +59,9 @@ impl MultivmServer {
             let helper = self.helper.lock().unwrap();
             let address: H160 = params.sequence().next::<String>().unwrap().from_0x();
             let account = helper.account(&AccountId::Evm(address.into()));
-            info!(
-                "returned: {}, hex: {}",
-                account.balance,
-                account.balance.to_0x()
-            );
-            account.balance.to_0x()
+            let balance = account.map(|a| a.balance).unwrap_or_default();
+            info!("returned: {}, hex: {}", balance, balance.to_0x());
+            balance.to_0x()
         })?;
         module.register_method("eth_getBlockByNumber", |params, _| {
             info!("eth_getBlockByNumber: {:#?}", params.sequence());
