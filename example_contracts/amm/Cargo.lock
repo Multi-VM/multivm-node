@@ -18,6 +18,7 @@ dependencies = [
  "borsh",
  "multivm_sdk",
  "multivm_sdk_macros",
+ "primitive-types",
  "risc0-zkvm",
 ]
 

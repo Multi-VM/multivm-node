@@ -1,8 +1,9 @@
 #![no_main]
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use eth_primitive_types::H160;
 use multivm_sdk::multivm_primitives::{EvmAddress, MultiVmAccountId};
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 pub struct AmmContract;
 
@@ -24,6 +25,12 @@ pub struct Pool {
 pub struct Token {
     pub symbol: String,
     pub address: String,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct AddPool {
+    pub token0: String,
+    pub token1: String,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -61,19 +68,21 @@ impl AmmContract {
         Self::save(state, ());
     }
 
-    pub fn add_pool(tokens: (String, String)) {
+    pub fn add_pool(input: AddPool) {
         let mut state = Self::load();
         
-        let token0_id = AccountId::MultiVm(MultiVmAccountId::try_from(tokens.0.clone()).unwrap());
+        let token0_id = AccountId::Evm(EvmAddress::try_from(H160::from_str(input.token0.clone().as_str()).unwrap()).unwrap());
+        // let token0_id = AccountId::MultiVm(MultiVmAccountId::try_from(input.token0.clone()).unwrap());
         let commitment = env::cross_contract_call(token0_id, "symbol".to_string(), 0, &());
         let symbol0: String = commitment.try_deserialize_response().unwrap();
 
-        let token1_id = AccountId::MultiVm(MultiVmAccountId::try_from(tokens.1.clone()).unwrap());
+        let token1_id = AccountId::Evm(EvmAddress::try_from(H160::from_str(input.token1.clone().as_str()).unwrap()).unwrap());
+        // let token1_id = AccountId::MultiVm(MultiVmAccountId::try_from(input.token1.clone()).unwrap());
         let commitment = env::cross_contract_call(token1_id, "symbol".to_string(), 0, &());
         let symbol1: String = commitment.try_deserialize_response().unwrap();
 
-        let token0 = Token { symbol: symbol0, address: tokens.0 };
-        let token1 = Token { symbol: symbol1, address: tokens.1 };
+        let token0 = Token { symbol: symbol0, address: input.token0 };
+        let token1 = Token { symbol: symbol1, address: input.token1 };
         let id = state.pools.len() as u128;
 
         let pool = Pool {

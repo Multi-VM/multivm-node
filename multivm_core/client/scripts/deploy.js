@@ -37,19 +37,29 @@ async function main() {
     }
   };
 
-  const empty_args_data = borsh.serialize({ array: { type: 'u8' }}, []);
-  var data = borsh.serialize(schema, { 
-    method: "init",
-    args: empty_args_data,
-    gas: BigInt(300000),
-    deposit: BigInt(0)
-  });
-  await signer.sendTransaction({
-    to: amm,
-    data: data
-  });
+  // const empty_args_data = borsh.serialize({ array: { type: 'u8' }}, []);
+  // var data = borsh.serialize(schema, { 
+  //   method: "init",
+  //   args: empty_args_data,
+  //   gas: BigInt(300000),
+  //   deposit: BigInt(0)
+  // });
+  // await signer.sendTransaction({
+  //   to: amm,
+  //   data: data
+  // });
 
-  const args_data = borsh.serialize({ array: { type: 'string', len: 2 }}, [token1.target, token2.target]);
+  const args_schema = {
+    struct: {
+      token0: "string",
+      token1: "string"
+    }
+  };
+  const args_data = borsh.serialize(args_schema, {
+      token0: token1.target,//.replace("0x", ""),
+      token1: token2.target//.replace("0x", "")
+    }
+  );
   data = borsh.serialize(schema, { 
     method: "add_pool",
     args: args_data,
