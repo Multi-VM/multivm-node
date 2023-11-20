@@ -13,8 +13,8 @@ async function main() {
   const user_addr2 = ethers.computeAddress("0x" + privateKey2);
 
   console.log("Creating evm accounts...");
-  create_account("user1.multivm", signingKey1.publicKey);
-  create_account("user2.multivm", signingKey2.publicKey);
+  create_account("user1.multivm", user_addr1);
+  create_account("user2.multivm", user_addr2);
   const token1 = await ethers.deployContract("Token");
   const token2 = await ethers.deployContract("Token");
   console.log("Tokens:", token1.target, token2.target);
@@ -25,7 +25,7 @@ async function main() {
   console.log("Calling amm...");
 
   const amm = await ethers.getContractAt("AMM", user_addr1);
-  const signer = new ethers.Wallet(privateKey1, ethers.provider);  
+  const signer = new ethers.Wallet(privateKey1, ethers.provider);
   const schema = {
     struct: {
       method: "string",
@@ -56,11 +56,11 @@ async function main() {
     }
   };
   const args_data = borsh.serialize(args_schema, {
-      token0: token1.target,//.replace("0x", ""),
-      token1: token2.target//.replace("0x", "")
-    }
+    token0: token1.target,//.replace("0x", ""),
+    token1: token2.target//.replace("0x", "")
+  }
   );
-  data = borsh.serialize(schema, { 
+  data = borsh.serialize(schema, {
     method: "add_pool",
     args: args_data,
     gas: BigInt(300000),
@@ -72,7 +72,7 @@ async function main() {
   });
 
 
-  
+
   return;
 
   // console.log("Token address:", await token.getAddress());
@@ -109,10 +109,10 @@ function call(method, params) {
   return JSON.parse(response.body.toString()).result;
 }
 
-function create_account(mvm, publicKey) {
-  return call("mvm_createAccount", [{
+function create_account(mvm, address) {
+  return call("mvm_debugAirdrop", [{
     "multivm": mvm,
-    "evm": publicKey
+    "address": address
   }]);
 }
 
@@ -128,7 +128,7 @@ function deploy_contract(mvm, bytecode) {
 }
 
 function toHexString(byteArray) {
-  return Array.from(byteArray, function(byte) {
+  return Array.from(byteArray, function (byte) {
     return ("0" + (byte & 0xFF).toString(16)).slice(-2);
   }).join("")
 }

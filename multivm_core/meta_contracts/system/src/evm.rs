@@ -243,9 +243,7 @@ impl<'vicinity> ApplyBackend for EvmMemoryBackend<'vicinity> {
                         let mut account =
                             account_management::account(&EvmAddress::from(address).into())
                                 .unwrap_or_else(|| {
-                                    account_management::Account::try_create_empty_evm(
-                                        address.into(),
-                                    )
+                                    account_management::Account::try_create(None, address.into())
                                 });
                         account.balance = basic.balance.as_u128();
                         account.nonce = basic.nonce.as_u64();

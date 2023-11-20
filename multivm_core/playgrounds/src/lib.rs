@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use eth_primitive_types::H160;
-use k256::ecdsa::VerifyingKey;
 use multivm_primitives::{
     k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
     Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction,
@@ -74,12 +72,13 @@ impl NodeHelper {
         self.keys.insert(account_id.clone().into(), sk.clone());
 
         let latest_block = self.node.latest_block();
+        let address: EvmAddress = (*sk.verifying_key()).into();
 
         let tx = multivm_primitives::TransactionBuilder::new(
             AccountId::system_meta_contract(),
             vec![ContractCall::new(
                 "init_debug_account".into(),
-                &sk.verifying_key().to_sec1_bytes().to_vec(),
+                &address,
                 100_000_000,
                 0,
             )],
@@ -109,7 +108,7 @@ impl NodeHelper {
             &latest_block,
             multivm_account_id.clone(),
             Self::super_account_id().into(),
-            sk.verifying_key(),
+            (*sk.verifying_key()).into(),
         );
         let tx_hash = tx.hash();
         let tx =
@@ -123,30 +122,22 @@ impl NodeHelper {
     pub fn create_evm_account(
         &mut self,
         multivm_account_id: &MultiVmAccountId,
-        vk: VerifyingKey,
-    ) -> H160 {
+        address: EvmAddress,
+    ) -> EvmAddress {
         let latest_block = self.node.latest_block();
-
-        // TODO: incorrect
-        let mut csprng = OsRng;
-        let sk = multivm_primitives::k256::ecdsa::SigningKey::random(&mut csprng);
-        self.keys
-            .insert(multivm_account_id.clone().into(), sk.clone());
 
         let tx = create_account_tx(
             &latest_block,
             multivm_account_id.clone(),
             Self::super_account_id().into(),
-            &vk,
+            address.clone(),
         );
         let tx =
             SignedTransaction::new(tx, self.keys.get(&Self::super_account_id().into()).unwrap());
 
         self.node.add_tx(tx.into());
 
-        let point = vk.to_encoded_point(false);
-        let hash = ethers_core::utils::keccak256(&point.as_bytes()[1..]);
-        eth_primitive_types::H160::from_slice(&hash[12..]).into()
+        address
     }
 
     pub fn create_contract(
@@ -230,17 +221,17 @@ fn create_account_tx(
     latest_block: &Block,
     multivm_account_id: MultiVmAccountId,
     signer_id: AccountId,
-    pk: &multivm_primitives::k256::ecdsa::VerifyingKey,
+    address: EvmAddress,
 ) -> Transaction {
     #[derive(BorshDeserialize, BorshSerialize)]
     struct AccountCreationRequest {
         pub account_id: MultiVmAccountId,
-        pub public_key: Vec<u8>,
+        pub address: EvmAddress,
     }
 
     let args = AccountCreationRequest {
         account_id: multivm_account_id,
-        public_key: pk.to_sec1_bytes().to_vec(),
+        address,
     };
 
     multivm_primitives::TransactionBuilder::new(
@@ -298,7 +289,6 @@ pub struct Account {
     internal_id: u128,
     pub evm_address: EvmAddress,
     pub multivm_account_id: Option<MultiVmAccountId>,
-    pub public_key: Option<Vec<u8>>,
     pub image_id: Option<[u32; 8]>,
     pub balance: u128,
     pub nonce: u64,
