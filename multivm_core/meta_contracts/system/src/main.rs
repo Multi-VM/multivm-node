@@ -284,7 +284,7 @@ fn create_account(call: ContractCall) {
 
 fn account_info(context: ContractCallContext) {
     let account_id: AccountId = context.contract_call.try_deserialize_args().unwrap();
-    let account = account_management::account(&account_id).expect("Account not found"); // TODO: handle error
+    let account = account_management::account(&account_id);
     system_env::commit(account)
 }
 
