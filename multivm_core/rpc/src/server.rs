@@ -6,12 +6,11 @@ use std::{
 use borsh::BorshDeserialize;
 use eth_primitive_types::H160;
 use ethers::{core::types::TransactionRequest, utils::rlp::Rlp};
-use ethers_core::k256::ecdsa::VerifyingKey;
 use hyper::Method;
 use jsonrpsee::server::Server;
 use jsonrpsee::RpcModule;
 use lazy_static::lazy_static;
-use multivm_primitives::{AccountId, MultiVmAccountId, SupportedTransaction};
+use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId, SupportedTransaction};
 use multivm_runtime::viewer::{EvmCall, SupportedView};
 use playgrounds::NodeHelper;
 use serde_json::json;
@@ -264,19 +263,21 @@ impl MultivmServer {
             hash.to_0x()
         })?;
 
-        module.register_method("mvm_createAccount", |params, _| {
-            info!("mvm_createAccount: {:#?}", params);
+        module.register_method("mvm_debugAirdrop", |params, _| {
+            info!("mvm_debugAirdrop: {:#?}", params);
 
             let obj: HashMap<String, String> = params.sequence().next().unwrap();
             let multivm_name = obj.get("multivm").unwrap();
-            let evm_public_key: String = obj.get("evm").unwrap().from_0x();
-            let vk = VerifyingKey::from_sec1_bytes(&hex::decode(evm_public_key).unwrap()).unwrap();
+            let address_str: String = obj.get("address").unwrap().from_0x();
+            let address_bytes: [u8; 20] = hex::decode(address_str).unwrap().try_into().unwrap();
+            let address: EvmAddress = address_bytes.into();
             let multivm = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
 
             let mut helper = self.helper.lock().unwrap();
-            let account = helper.create_evm_account(&multivm, vk);
+            let account = helper.create_evm_account(&multivm, address);
             info!("=== Account added: {:#?}", account);
-            account.to_0x()
+            helper.node.produce_block(true);
+            account.to_string()
         })?;
 
         module.register_method("mvm_deployContract", |params, _| {

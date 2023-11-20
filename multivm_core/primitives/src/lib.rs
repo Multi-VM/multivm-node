@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ethers_core::{types::TransactionRequest, utils::rlp::Rlp};
-use k256::ecdsa::signature::Verifier;
+use k256::ecdsa::{signature::Verifier, VerifyingKey};
 use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use serde::{Deserialize, Serialize};
 
@@ -219,6 +219,14 @@ impl From<eth_primitive_types::H160> for EvmAddress {
 impl From<EvmAddress> for eth_primitive_types::H160 {
     fn from(id: EvmAddress) -> Self {
         id.0.into()
+    }
+}
+
+impl From<VerifyingKey> for EvmAddress {
+    fn from(value: VerifyingKey) -> Self {
+        let point = value.to_encoded_point(false);
+        let hash = ethers_core::utils::keccak256(&point.as_bytes()[1..]);
+        eth_primitive_types::H160::from_slice(&hash[12..]).into()
     }
 }
 
@@ -505,12 +513,29 @@ impl SignedTransaction {
         }
     }
 
-    pub fn verify(&self, public_key: k256::ecdsa::VerifyingKey) -> bool {
+    pub fn verify(&self, address: EvmAddress) -> bool {
+        let Some(public_key) = self.recover() else {
+            return false;
+        };
+
         let signature = k256::ecdsa::Signature::from_slice(&self.signature).unwrap();
 
-        public_key
+        let signature_valid = public_key
             .verify(&self.transaction.bytes(), &signature)
-            .is_ok()
+            .is_ok();
+
+        let recovered_address = EvmAddress::from(public_key);
+        let address_valid = recovered_address == address;
+
+        if !signature_valid {
+            panic!("signature is invalid");
+        }
+
+        if !address_valid {
+            panic!("address is invalid: {} != {}", recovered_address, address)
+        }
+
+        signature_valid && address_valid
     }
 
     pub fn recover(&self) -> Option<k256::ecdsa::VerifyingKey> {

@@ -20,7 +20,7 @@ const ONE_TOKEN: u128 = 10u128.pow(TOKEN_DECIMALS);
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 struct AccountCreationRequest {
     pub account_id: MultiVmAccountId,
-    pub public_key: Vec<u8>,
+    pub address: EvmAddress,
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -97,8 +97,10 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
     };
     system_env::setup_env(&ctx);
 
-    let caller = account_management::account(&EvmAddress::from(tx.from.expect("no 'from', probably tx is not signed")).into())
-        .expect(format!("Caller not found: {:#?}", tx.from).as_str()); // TODO: handle error
+    let caller = account_management::account(
+        &EvmAddress::from(tx.from.expect("no 'from', probably tx is not signed")).into(),
+    )
+    .expect(format!("Caller not found: {:#?}", tx.from).as_str()); // TODO: handle error
 
     match tx.processing_flow() {
         EthereumTxFlow::Deploy(bytecode) => evm::deploy_evm_contract(caller, bytecode),
@@ -115,7 +117,12 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
                     let Some(multivm_contract_id) = contract.multivm_account_id else {
                         panic!("Contract is MultiVM executable but has no multivm account");
                     };
-                    process_call(multivm_contract_id.into(), borsh::from_slice(&data).expect("multivm tx data was incorrectly serialized"), ctx)
+                    process_call(
+                        multivm_contract_id.into(),
+                        borsh::from_slice(&data)
+                            .expect("multivm tx data was incorrectly serialized"),
+                        ctx,
+                    )
                 }
                 _ => panic!("Executable not supported"),
             }
@@ -203,10 +210,10 @@ fn evm_call(ctx: ContractCallContext) {
 }
 
 // TODO: remove this
-fn init_debug_account(public_key: Vec<u8>) {
+fn init_debug_account(address: EvmAddress) {
     let mut account = account_management::Account::try_create(
         Some(MultiVmAccountId::try_from("super.multivm").unwrap()),
-        public_key,
+        address,
     );
     account.balance = 1_000_000_000_000 * ONE_TOKEN;
     update_account(account);
@@ -225,12 +232,7 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
 
         let signer = account_management::account(&signer_id).expect("Signer not found"); // TODO: handle error
 
-        // if both public key signature and address check are invalid
-        if !signer.public_key.map(|pk| { 
-            signed_tx.verify(pk.as_slice().try_into().unwrap())
-        }).unwrap_or(true) && !{
-            signed_tx.verify(signed_tx.recover().unwrap())
-        } {
+        if !signed_tx.verify(signer.evm_address) {
             panic!("Invalid signature"); // TODO: handle error
         }
     }
@@ -264,7 +266,7 @@ fn process_call(contract_id: AccountId, call: ContractCall, ctx: ContractCallCon
 fn create_account(call: ContractCall) {
     let req: AccountCreationRequest = call.try_deserialize_args().unwrap();
 
-    let mut account = account_management::Account::try_create(Some(req.account_id), req.public_key);
+    let mut account = account_management::Account::try_create(Some(req.account_id), req.address);
     let caller = account_management::account(&system_env::caller()).unwrap();
 
     caller
@@ -317,7 +319,7 @@ fn contract_call(contract_id: AccountId, call: ContractCall) {
                 "Not enough balance for {} (balance {}, required {})",
                 signer_id, signer.balance, call.gas
             ));
-    
+
         account_management::update_account(signer);
     }
 
@@ -326,7 +328,6 @@ fn contract_call(contract_id: AccountId, call: ContractCall) {
 
 mod account_management {
     use borsh::{BorshDeserialize, BorshSerialize};
-    use ethers_core::k256::elliptic_curve::sec1::ToEncodedPoint;
     use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId};
 
     use crate::system_env;
@@ -353,7 +354,6 @@ mod account_management {
         internal_id: u128,
         pub evm_address: EvmAddress,
         pub multivm_account_id: Option<MultiVmAccountId>,
-        pub public_key: Option<Vec<u8>>,
         pub executable: Option<Executable>,
         pub balance: u128,
         pub nonce: u64,
@@ -362,23 +362,14 @@ mod account_management {
     impl Account {
         pub fn try_create(
             multivm_account_id: Option<MultiVmAccountId>,
-            public_key: Vec<u8>,
+            address: EvmAddress,
         ) -> Self {
-            let evm_address: EvmAddress = {
-                let public_key =
-                    k256::PublicKey::from_sec1_bytes(&public_key).expect("Invalid public key"); // TODO: handle error
-
-                let point = public_key.to_encoded_point(false);
-                let hash = ethers_core::utils::keccak256(&point.as_bytes()[1..]);
-                eth_primitive_types::H160::from_slice(&hash[12..]).into()
-            };
-
             let multivm_exists = multivm_account_id
                 .clone()
                 .map(|multivm_account_id| account_exists(&multivm_account_id.into()))
                 .unwrap_or_default();
 
-            let evm_exists = account_exists(&evm_address.clone().into());
+            let evm_exists = account_exists(&address.clone().into());
 
             if multivm_exists || evm_exists {
                 panic!("Account alias already exists"); // TODO: handle error
@@ -386,28 +377,8 @@ mod account_management {
 
             let account = Self {
                 internal_id: increment_account_counter(),
-                public_key: Some(public_key),
-                evm_address,
+                evm_address: address,
                 multivm_account_id,
-                executable: None,
-                balance: 0,
-                nonce: 0,
-            };
-
-            register_account(account.clone());
-            account
-        }
-
-        pub fn try_create_empty_evm(evm_address: EvmAddress) -> Self {
-            if account_exists(&evm_address.clone().into()) {
-                panic!("Account alias already exists"); // TODO: handle error
-            }
-
-            let account = Self {
-                internal_id: increment_account_counter(),
-                public_key: None,
-                evm_address,
-                multivm_account_id: None,
                 executable: None,
                 balance: 0,
                 nonce: 0,
