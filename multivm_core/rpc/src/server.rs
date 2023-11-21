@@ -10,7 +10,9 @@ use hyper::Method;
 use jsonrpsee::server::Server;
 use jsonrpsee::RpcModule;
 use lazy_static::lazy_static;
-use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId, SupportedTransaction};
+use multivm_primitives::{
+    AccountId, EthereumTransactionRequest, EvmAddress, MultiVmAccountId, SupportedTransaction,
+};
 use multivm_runtime::viewer::{EvmCall, SupportedView};
 use playgrounds::NodeHelper;
 use serde_json::json;
@@ -208,11 +210,8 @@ impl MultivmServer {
                         SupportedTransaction::MultiVm(_) => {
                             unreachable!("eth_getTransactionByHash for multiVM tx!")
                         }
-                        SupportedTransaction::Evm(bytes) => {
-                            let bytes = bytes.clone();
-                            let rlp = Rlp::new(&bytes);
-                            let (tx_request, sig) =
-                                TransactionRequest::decode_signed_rlp(&rlp).unwrap();
+                        SupportedTransaction::Evm(tx) => {
+                            let (tx_request, sig) = tx.decode();
                             let result = Some(EthTransaction::from(
                                 tx_request,
                                 sig,
@@ -252,7 +251,7 @@ impl MultivmServer {
                 Err(error) => info!("Invalid signature {:#?}", error),
             }
 
-            let tx = SupportedTransaction::Evm(data);
+            let tx = SupportedTransaction::Evm(EthereumTransactionRequest::new(data));
             let hash = tx.hash();
             node.add_tx(tx);
             node.produce_block(true);

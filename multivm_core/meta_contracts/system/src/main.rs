@@ -5,8 +5,8 @@ use core::panic;
 use account_management::{update_account, MultiVmExecutable};
 use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{
-    AccountId, ContractCall, ContractCallContext, EnvironmentContext, EvmAddress, MultiVmAccountId,
-    SignedTransaction, SupportedTransaction,
+    AccountId, ContractCall, ContractCallContext, EnvironmentContext, EthereumTransactionRequest,
+    EvmAddress, MultiVmAccountId, SignedTransaction, SupportedTransaction,
 };
 
 use crate::account_management::Executable;
@@ -75,9 +75,8 @@ fn entrypoint() {
     };
 }
 
-fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext) {
-    let rlp = ethers_core::utils::rlp::Rlp::new(&bytes);
-    let (tx, sign) = ethers_core::types::TransactionRequest::decode_signed_rlp(&rlp).unwrap();
+fn process_ethereum_transaction(tx: EthereumTransactionRequest, environment: EnvironmentContext) {
+    let (tx, sign) = tx.decode();
     if !sign.verify(tx.sighash(), tx.from.unwrap()).is_ok() {
         panic!("Invalid signature");
     }
@@ -92,6 +91,7 @@ fn process_ethereum_transaction(bytes: Vec<u8>, environment: EnvironmentContext)
         contract_id: AccountId::system_meta_contract(),
         contract_call,
         sender_id: AccountId::system_meta_contract(),
+
         signer_id: AccountId::system_meta_contract(),
         environment,
     };
