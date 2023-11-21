@@ -270,10 +270,12 @@ impl MultivmServer {
             let multivm = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
 
             let mut helper = self.helper.lock().unwrap();
-            let account = helper.create_evm_account(&multivm, address);
-            info!("=== Account added: {:#?}", account);
+            if let None = helper.account(&multivm.clone().into()) {
+                helper.create_evm_account(&multivm, address.clone());
+                info!("Account {} ({}) created", multivm, address);
+            }
             helper.node.produce_block(true);
-            account.to_string()
+            address.to_string()
         })?;
 
         module.register_method("mvm_deployContract", |params, _| {
