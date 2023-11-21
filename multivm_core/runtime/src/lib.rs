@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
-use multivm_primitives::{Block, EnvironmentContext, MultiVmAccountId, SupportedTransaction};
+use multivm_primitives::{Block, EnvironmentContext, SupportedTransaction};
 use tracing::{debug, info};
 use viewer::{SupportedView, Viewer};
 

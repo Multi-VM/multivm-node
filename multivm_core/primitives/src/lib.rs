@@ -1,7 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use ethers_core::{types::TransactionRequest, utils::rlp::Rlp};
 use k256::ecdsa::{signature::Verifier, VerifyingKey};
-use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use serde::{Deserialize, Serialize};
 
 pub use k256;
@@ -328,19 +326,37 @@ impl ContractCall {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct EthereumTransactionRequest(Vec<u8>);
+
+impl EthereumTransactionRequest {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub fn decode(
+        &self,
+    ) -> (
+        ethers_core::types::TransactionRequest,
+        ethers_core::types::Signature,
+    ) {
+        let rlp = ethers_core::utils::rlp::Rlp::new(&self.0);
+        ethers_core::types::TransactionRequest::decode_signed_rlp(&rlp).unwrap()
+    }
+}
+
 // TODO: rename
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum SupportedTransaction {
     MultiVm(SignedTransaction),
-    Evm(Vec<u8>),
+    Evm(EthereumTransactionRequest),
 }
 
 impl SupportedTransaction {
     pub fn hash(&self) -> Digest {
         match self {
             Self::MultiVm(tx) => tx.transaction.hash(),
-            // TODO: replace with proper hash
-            Self::Evm(tx) => HashImpl::hash_bytes(&tx).as_bytes().try_into().unwrap(),
+            Self::Evm(tx) => tx.decode().0.sighash().into(),
         }
     }
 
@@ -354,9 +370,8 @@ impl SupportedTransaction {
     pub fn signer(&self) -> AccountId {
         match self {
             Self::MultiVm(tx) => tx.transaction.signer_id.clone(),
-            SupportedTransaction::Evm(bytes) => {
-                let rlp = Rlp::new(bytes);
-                let (tx_request, _sig) = TransactionRequest::decode_signed_rlp(&rlp).unwrap();
+            SupportedTransaction::Evm(tx) => {
+                let (tx_request, _sig) = tx.decode();
                 let from = tx_request.from.unwrap();
                 AccountId::Evm(from.into())
             }
@@ -367,12 +382,6 @@ impl SupportedTransaction {
 impl From<SignedTransaction> for SupportedTransaction {
     fn from(tx: SignedTransaction) -> Self {
         Self::MultiVm(tx)
-    }
-}
-
-impl From<Vec<u8>> for SupportedTransaction {
-    fn from(tx: Vec<u8>) -> Self {
-        Self::Evm(tx)
     }
 }
 
