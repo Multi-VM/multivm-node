@@ -58,7 +58,6 @@ pub struct Account {
     pub nonce: u64,
 }
 
-
 #[multivm_sdk_macros::contract]
 impl AmmContract {
     pub fn init() {
@@ -70,19 +69,29 @@ impl AmmContract {
 
     pub fn add_pool(input: AddPool) {
         let mut state = Self::load();
-        
-        let token0_id = AccountId::Evm(EvmAddress::try_from(H160::from_str(input.token0.clone().as_str()).unwrap()).unwrap());
+
+        let token0_id = AccountId::Evm(
+            EvmAddress::try_from(H160::from_str(input.token0.clone().as_str()).unwrap()).unwrap(),
+        );
         // let token0_id = AccountId::MultiVm(MultiVmAccountId::try_from(input.token0.clone()).unwrap());
         let commitment = env::cross_contract_call(token0_id, "symbol".to_string(), 0, &());
         let symbol0: String = commitment.try_deserialize_response().unwrap();
 
-        let token1_id = AccountId::Evm(EvmAddress::try_from(H160::from_str(input.token1.clone().as_str()).unwrap()).unwrap());
+        let token1_id = AccountId::Evm(
+            EvmAddress::try_from(H160::from_str(input.token1.clone().as_str()).unwrap()).unwrap(),
+        );
         // let token1_id = AccountId::MultiVm(MultiVmAccountId::try_from(input.token1.clone()).unwrap());
         let commitment = env::cross_contract_call(token1_id, "symbol".to_string(), 0, &());
         let symbol1: String = commitment.try_deserialize_response().unwrap();
 
-        let token0 = Token { symbol: symbol0, address: input.token0 };
-        let token1 = Token { symbol: symbol1, address: input.token1 };
+        let token0 = Token {
+            symbol: symbol0,
+            address: input.token0,
+        };
+        let token1 = Token {
+            symbol: symbol1,
+            address: input.token1,
+        };
         let id = state.pools.len() as u128;
 
         let pool = Pool {
@@ -101,13 +110,29 @@ impl AmmContract {
         let mut state = Self::load();
 
         let caller = env::caller();
-        let mut pool = state.pools.get(&input.pool_id).expect("Pool not found").clone();
+        let mut pool = state
+            .pools
+            .get(&input.pool_id)
+            .expect("Pool not found")
+            .clone();
 
-        let token0_id = AccountId::MultiVm(MultiVmAccountId::try_from(pool.token0.address.clone()).unwrap());
-        let _commitment = env::cross_contract_call(token0_id, "transfer_from".to_string(), 0, &(caller.clone(), input.amount0));
+        let token0_id =
+            AccountId::MultiVm(MultiVmAccountId::try_from(pool.token0.address.clone()).unwrap());
+        let _commitment = env::cross_contract_call(
+            token0_id,
+            "transfer_from".to_string(),
+            0,
+            &(caller.clone(), input.amount0),
+        );
 
-        let token1_id = AccountId::MultiVm(MultiVmAccountId::try_from(pool.token1.address.clone()).unwrap());
-        let _commitment = env::cross_contract_call(token1_id, "transfer_from".to_string(), 0, &(caller.clone(), input.amount1));
+        let token1_id =
+            AccountId::MultiVm(MultiVmAccountId::try_from(pool.token1.address.clone()).unwrap());
+        let _commitment = env::cross_contract_call(
+            token1_id,
+            "transfer_from".to_string(),
+            0,
+            &(caller.clone(), input.amount1),
+        );
 
         pool.reserve0 += input.amount0;
         pool.reserve1 += input.amount1;
@@ -121,18 +146,35 @@ impl AmmContract {
         let mut state = Self::load();
 
         let caller = env::caller();
-        let mut pool = state.pools.get(&input.pool_id).expect("Pool not found").clone();
+        let mut pool = state
+            .pools
+            .get(&input.pool_id)
+            .expect("Pool not found")
+            .clone();
 
-        let amount1_out = pool.reserve1 - pool.reserve0 * pool.reserve1 / (pool.reserve0 + input.amount0_in);
+        let amount1_out =
+            pool.reserve1 - pool.reserve0 * pool.reserve1 / (pool.reserve0 + input.amount0_in);
 
         pool.reserve0 = pool.reserve0 + input.amount0_in;
         pool.reserve1 = pool.reserve1 - amount1_out;
 
-        let token0_id = AccountId::MultiVm(MultiVmAccountId::try_from(pool.token0.address.clone()).unwrap());
-        let _commitment = env::cross_contract_call(token0_id, "transfer_from".to_string(), 0, &(caller.clone(), input.amount0_in));
+        let token0_id =
+            AccountId::MultiVm(MultiVmAccountId::try_from(pool.token0.address.clone()).unwrap());
+        let _commitment = env::cross_contract_call(
+            token0_id,
+            "transfer_from".to_string(),
+            0,
+            &(caller.clone(), input.amount0_in),
+        );
 
-        let token1_id = AccountId::MultiVm(MultiVmAccountId::try_from(pool.token1.address.clone()).unwrap());
-        let _commitment = env::cross_contract_call(token1_id, "transfer".to_string(), 0, &(caller.clone(), amount1_out));
+        let token1_id =
+            AccountId::MultiVm(MultiVmAccountId::try_from(pool.token1.address.clone()).unwrap());
+        let _commitment = env::cross_contract_call(
+            token1_id,
+            "transfer".to_string(),
+            0,
+            &(caller.clone(), amount1_out),
+        );
 
         state.pools.insert(pool.id, pool);
 

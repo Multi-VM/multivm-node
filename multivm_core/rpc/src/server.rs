@@ -6,6 +6,7 @@ use std::{
 use borsh::BorshDeserialize;
 use eth_primitive_types::H160;
 use ethers::{core::types::TransactionRequest, utils::rlp::Rlp};
+use ethers_core::k256::ecdsa::SigningKey;
 use hyper::Method;
 use jsonrpsee::server::Server;
 use jsonrpsee::RpcModule;
@@ -256,6 +257,8 @@ impl MultivmServer {
             node.add_tx(tx);
             node.produce_block(true);
 
+            info!("==== returned {:#?}", hash.to_0x());
+
             hash.to_0x()
         })?;
 
@@ -284,13 +287,31 @@ impl MultivmServer {
             let obj: HashMap<String, String> = params.sequence().next().unwrap();
             let bytecode: Vec<u8> = obj.get("bytecode").unwrap().from_0x();
             let multivm_name = obj.get("multivm").unwrap();
-            let multivm = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
+            let private_key: String = obj.get("private_key").unwrap().from_0x();
+            let sk = SigningKey::from_slice(&hex::decode(private_key).unwrap()).unwrap();
+            let account_id = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
 
             let mut helper = self.helper.lock().unwrap();
-            helper.deploy_contract(&multivm, bytecode);
+            helper.deploy_contract_with_key(&account_id, bytecode, sk);
             helper.produce_block(true);
 
             "0x0"
+        })?;
+
+        module.register_method("mvm_viewCall", |params, _| {
+            info!("mvm_viewCall");
+
+            let obj: HashMap<String, String> = params.sequence().next().unwrap();
+            let multivm_name = obj.get("multivm").unwrap();
+            let call_raw: String = obj.get("call").unwrap().from_0x();
+            let call = borsh::from_slice(&hex::decode(call_raw).unwrap()).unwrap();
+            let contract_id = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
+
+            let helper = self.helper.lock().unwrap();
+            let resp = helper.view(&contract_id.into(), call);
+            info!("==== returned {:#?}", resp.to_0x());
+
+            resp.to_0x()
         })?;
 
         module.register_method("eth_call", |params, _| {

@@ -356,7 +356,7 @@ impl SupportedTransaction {
     pub fn hash(&self) -> Digest {
         match self {
             Self::MultiVm(tx) => tx.transaction.hash(),
-            Self::Evm(tx) => tx.decode().0.sighash().into(),
+            Self::Evm(tx) => ethers_core::utils::keccak256::<Vec<u8>>(tx.0.clone().into()),
         }
     }
 

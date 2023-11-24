@@ -20,7 +20,7 @@ async function main() {
   console.log("Tokens:", token1.target, token2.target);
 
   const bytecode = fs.readFileSync("../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/amm");
-  deploy_contract("user1.multivm", toHexString(bytecode));
+  deploy_multivm_contract_from_node("user1.multivm", privateKey1, toHexString(bytecode));
 
   console.log("Calling amm...");
 
@@ -120,11 +120,45 @@ function get_balance(address) {
   return call("eth_getBalance", [address]);
 }
 
-function deploy_contract(mvm, bytecode) {
+// temporary solution until we have multivm structs in nodejs
+function deploy_multivm_contract_from_node(mvm, private_key, bytecode) {
   return call("mvm_deployContract", [{
     "multivm": mvm,
+    "private_key": private_key,
     "bytecode": bytecode,
   }]);
+}
+
+function mvm_view(account, method, args) {
+  const schema = {
+    struct: {
+      method: "string",
+      args: {
+        array: { type: "u8" }
+      },
+      gas: "u64",
+      deposit: "u128"
+    }
+  };
+
+  const args_schema = {
+    struct: {
+      token0: "string",
+      token1: "string"
+    }
+  };
+
+  // const args_data = borsh.serialize(args_schema, {
+  //   token0: token1.target,//.replace("0x", ""),
+  //   token1: token2.target//.replace("0x", "")
+  // });
+
+  // payload = borsh.serialize(schema, {
+  //   method: "add_pool",
+  //   args: args_data,
+  //   gas: BigInt(300000),
+  //   deposit: BigInt(0)
+  // });
 }
 
 function toHexString(byteArray) {

@@ -127,6 +127,7 @@ impl MultivmNode {
 
         let block = unproved_block.prove(skip_proof);
         info!(time = ?start.elapsed(), height = block.height, txs_count = block.txs.len(), "Block created");
+        debug!(height = ?block.height, txs = ?block.txs.iter().map(|tx| hex::encode(tx.hash())).collect::<Vec<_>>(), "Block created");
         self.insert_block(block.clone());
         block
     }
