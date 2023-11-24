@@ -126,11 +126,13 @@ impl Executor {
 
             let key = String::from_utf8(from_guest.into()).unwrap();
 
-            let db_key = format!(
-                "committed_storage.{}.{}",
-                self.context.contract_id.to_string(),
-                key
-            );
+            // TODO: select using Executable variant, not AccountId
+            let storage_location = match self.context.contract_id.clone() {
+                AccountId::MultiVm(account_id) => account_id.into(),
+                AccountId::Evm(_) => AccountId::system_meta_contract(),
+            };
+
+            let db_key = format!("committed_storage.{}.{}", storage_location, key);
 
             let storage = self
                 .db
@@ -148,7 +150,7 @@ impl Executor {
 
             let response_bytes = borsh::to_vec(&response).unwrap();
 
-            debug!(contract=?self.context.contract_id, key=?key, "Loading storage");
+            debug!(contract=?storage_location, key=?key, "Loading storage");
 
             Ok(response_bytes.into())
         }
@@ -168,13 +170,15 @@ impl Executor {
             let hash2 = algorithm.finalize_reset();
             assert_eq!(request.hash, hash2.as_slice());
 
-            debug!(contract=?self.context.contract_id, key=?request.key, new_hash = utils::bytes_to_hex(hash2.as_slice()), "Updating storage");
+            // TODO: select using Executable variant, not AccountId
+            let storage_location = match self.context.contract_id.clone() {
+                AccountId::MultiVm(account_id) => account_id.into(),
+                AccountId::Evm(_) => AccountId::system_meta_contract(),
+            };
 
-            let db_key = format!(
-                "committed_storage.{}.{}",
-                self.context.contract_id.to_string(),
-                request.key
-            );
+            debug!(contract=?storage_location, key=?request.key, new_hash = utils::bytes_to_hex(hash2.as_slice()), "Updating storage");
+
+            let db_key = format!("committed_storage.{}.{}", storage_location, request.key);
 
             self.db
                 .insert(db_key, request.storage)

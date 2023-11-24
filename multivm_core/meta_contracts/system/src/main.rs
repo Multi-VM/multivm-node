@@ -197,7 +197,8 @@ fn evm_view_call(call: EvmCall, environment: EnvironmentContext) {
 }
 
 fn evm_call(ctx: ContractCallContext) {
-    let caller = account_management::account(&system_env::caller()).expect("Caller not found"); // TODO: handle error
+    let caller = account_management::account(&system_env::caller())
+        .expect(&format!("Caller not found: {}", system_env::caller())); // TODO: handle error
     let contract =
         account_management::account(&system_env::contract()).expect("Contract not found"); // TODO: handle error
 

@@ -157,11 +157,20 @@ impl NodeHelper {
         code: Vec<u8>,
     ) -> Digest {
         let key = self.keys.get(&multivm_contract_id.clone().into()).unwrap();
+        self.deploy_contract_with_key(multivm_contract_id, code, key.clone())
+    }
+
+    pub fn deploy_contract_with_key(
+        &mut self,
+        multivm_contract_id: &MultiVmAccountId,
+        code: Vec<u8>,
+        key: SigningKey,
+    ) -> Digest {
         let latest_block = self.node.latest_block();
         let (tx, attachs) =
             deploy_contract_tx(&latest_block, multivm_contract_id.clone().into(), code);
         let tx_hash = tx.hash();
-        let tx = SignedTransaction::new_with_attachments(tx, key, attachs);
+        let tx = SignedTransaction::new_with_attachments(tx, &key, attachs);
 
         self.node.add_tx(tx.into());
 
@@ -214,6 +223,22 @@ impl NodeHelper {
             ));
 
         borsh::from_slice(&bytes).unwrap()
+    }
+
+    pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> Vec<u8> {
+        let bytes = self
+            .node
+            .view(multivm_runtime::viewer::SupportedView::MultiVm(
+                ContractCallContext {
+                    contract_id: contract_id.clone(),
+                    contract_call: call,
+                    sender_id: AccountId::system_meta_contract(),
+                    signer_id: AccountId::system_meta_contract(),
+                    environment: EnvironmentContext { block_height: 0 },
+                },
+            ));
+
+        bytes
     }
 }
 
