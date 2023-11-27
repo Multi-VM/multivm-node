@@ -67,6 +67,10 @@ impl AmmContract {
         Self::save(state, ());
     }
 
+    pub fn test_view() {
+        env::commit(123u8);
+    }
+
     pub fn add_pool(input: AddPool) {
         let mut state = Self::load();
 
