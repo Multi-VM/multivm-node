@@ -299,14 +299,11 @@ impl MultivmServer {
         })?;
 
         module.register_method("mvm_viewCall", |params, _| {
-            info!("mvm_viewCall");
+            info!("mvm_viewCall, {:#?}", params.sequence());
 
-            let obj: HashMap<String, String> = params.sequence().next().unwrap();
-            let multivm_name = obj.get("multivm").unwrap();
-            let call_raw: String = obj.get("call").unwrap().from_0x();
-            let call = borsh::from_slice(&hex::decode(call_raw).unwrap()).unwrap();
-            let contract_id = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
-
+            let mut seq = params.sequence();
+            let contract_id: MultiVmAccountId = seq.next().unwrap();
+            let call = seq.next().unwrap();
             let helper = self.helper.lock().unwrap();
             let resp = helper.view(&contract_id.into(), call);
             info!("==== returned {:#?}", resp.to_0x());

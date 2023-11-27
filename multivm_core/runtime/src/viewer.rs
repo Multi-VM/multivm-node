@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, span, Level};
 
 use multivm_primitives::{
-    syscalls::{GetStorageResponse, GET_STORAGE_CALL},
+    syscalls::{GetStorageResponse, GET_STORAGE_CALL, SET_STORAGE_CALL},
     AccountId, Commitment, ContractCallContext, EnvironmentContext, SupportedTransaction,
 };
 
@@ -49,23 +49,33 @@ impl Viewer {
     }
 
     pub fn view(self) -> Vec<u8> {
-        let action = Action::View(
-            self.view.clone(),
-            EnvironmentContext {
-                block_height: 2, // TODO: hardcoded height
-            },
-        );
-        let action_bytes = borsh::to_vec(&action).unwrap();
+        let contract_id = self.view.contract_id();
+
+        let input_bytes = if contract_id == AccountId::system_meta_contract() {
+            let action = Action::View(
+                self.view.clone(),
+                EnvironmentContext {
+                    block_height: 2, // TODO: hardcoded height
+                },
+            );
+            borsh::to_vec(&action).unwrap()
+        } else {
+            let call = match self.view.clone() {
+                SupportedView::MultiVm(call) => call,
+                _ => unreachable!(),
+            };
+            borsh::to_vec(&call).unwrap()
+        };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
-            .add_input(&risc0_zkvm::serde::to_vec(&action_bytes).unwrap())
+            .add_input(&risc0_zkvm::serde::to_vec(&input_bytes).unwrap())
             .session_limit(Some(usize::MAX))
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
+            .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
             .stdout(ContractLogger::new(AccountId::system_meta_contract()))
             .build()
             .unwrap();
 
-        let contract_id = self.view.contract_id();
         let elf = if contract_id == AccountId::system_meta_contract() {
             meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec()
         } else {
@@ -133,6 +143,13 @@ impl Viewer {
 
             Ok(response_bytes.into())
         }
+    }
+
+    // Writing to storage is prohibited in viewer
+    pub fn callback_on_set_storage<'a>(
+        &'a self,
+    ) -> impl Fn(risc0_zkvm::Bytes) -> risc0_zkvm::Result<risc0_zkvm::Bytes> + 'a {
+        |_from_guest| Ok(Default::default())
     }
 }
 
