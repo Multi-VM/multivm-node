@@ -30,12 +30,12 @@ pub struct MultivmServer {
 }
 
 impl MultivmServer {
-    pub fn new() -> Self {
+    pub fn new(db_path: Option<String>) -> Self {
         Self {
-            helper: Arc::new(Mutex::new(NodeHelper::new_temp())),
+            helper: Arc::new(Mutex::new(NodeHelper::new(db_path))),
         }
     }
-    pub async fn start(&'static mut self) -> anyhow::Result<()> {
+    pub async fn start(&self, port: u16) -> anyhow::Result<()> {
         let cors = CorsLayer::new()
             .allow_methods([Method::POST, Method::OPTIONS])
             .allow_origin(Any)
@@ -43,7 +43,7 @@ impl MultivmServer {
         let middleware = tower::ServiceBuilder::new().layer(cors);
         let server = Server::builder()
             .set_middleware(middleware)
-            .build("0.0.0.0:8080")
+            .build(format!("0.0.0.0:{}", port))
             .await?;
         let mut module = RpcModule::new(());
 
@@ -51,24 +51,27 @@ impl MultivmServer {
             info!("eth_chainId: {}", CHAIN_ID.to_0x());
             CHAIN_ID.to_0x()
         })?;
-        module.register_method("eth_blockNumber", |_, _| {
-            let helper = self.helper.lock().unwrap();
+        let helper = self.helper.clone();
+        module.register_method("eth_blockNumber", move |_, _| {
+            let helper = helper.lock().unwrap();
             let height = format!("0x{:x}", helper.node.latest_block().height);
             info!("eth_blockNumber: {}", height);
             height
         })?;
-        module.register_method("eth_getBalance", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_getBalance", move |params, _| {
             info!("eth_getBalance: {:#?}", params);
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
             let address: H160 = params.sequence().next::<String>().unwrap().from_0x();
             let account = helper.account(&AccountId::Evm(address.into()));
             let balance = account.map(|a| a.balance).unwrap_or_default();
             info!("returned: {}, hex: {}", balance, balance.to_0x());
             balance.to_0x()
         })?;
-        module.register_method("eth_getBlockByNumber", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_getBlockByNumber", move |params, _| {
             info!("eth_getBlockByNumber: {:#?}", params.sequence());
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
             let block_request = params.sequence().next::<String>().unwrap();
             let height = if block_request == "latest" {
                 helper.node.latest_block().height
@@ -83,9 +86,10 @@ impl MultivmServer {
             info!("returned: {:#?}", output);
             json!(output)
         })?;
-        module.register_method("eth_getBlockByHash", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_getBlockByHash", move |params, _| {
             info!("eth_getBlockByHash: {:#?}", params.sequence());
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
             let block_request = params.sequence().next::<String>().unwrap();
             let height = if block_request == "latest" {
                 helper.node.latest_block().height
@@ -97,10 +101,11 @@ impl MultivmServer {
             info!("returned: {:#?}", output);
             json!(output)
         })?;
-        module.register_method("eth_getTransactionReceipt", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_getTransactionReceipt", move |params, _| {
             let hash = params.sequence().next::<String>().unwrap();
             info!("eth_getTransactionReceipt: \n\r{:#?}", hash);
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
             for height in 1..=helper.node.latest_block().height {
                 let block = helper.node.block_by_height(height).unwrap();
                 for tx in block.txs.clone() {
@@ -177,13 +182,14 @@ impl MultivmServer {
             info!("eth_estimateGas");
             "0x5208"
         })?;
-        module.register_method("eth_getTransactionCount", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_getTransactionCount", move |params, _| {
             info!("eth_getTransactionCount {:#?}", params.sequence());
 
             let address = params.sequence().next::<String>().unwrap();
             let mut tx_count: usize = 0;
 
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
             for height in 1..=helper.node.latest_block().height {
                 let block = helper.node.block_by_height(height).unwrap();
                 for tx in block.txs {
@@ -199,11 +205,12 @@ impl MultivmServer {
             info!("returned count {}", tx_count.to_0x());
             tx_count.to_0x()
         })?;
-        module.register_method("eth_getTransactionByHash", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_getTransactionByHash", move |params, _| {
             info!("eth_getTransactionByHash {:#?}", params.sequence());
 
             let hash: String = params.sequence().next().unwrap();
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
 
             for tx in helper.node.latest_block().txs {
                 if tx.hash().to_0x() == hash {
@@ -228,7 +235,8 @@ impl MultivmServer {
 
             return None;
         })?;
-        module.register_method("eth_sendRawTransaction", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_sendRawTransaction", move |params, _| {
             let params_str = format!("{:#?}", params);
             info!(
                 "eth_sendRawTransaction {:#?}",
@@ -239,7 +247,7 @@ impl MultivmServer {
             );
 
             let data_str: String = params.sequence().next::<String>().unwrap().from_0x();
-            let mut helper = self.helper.lock().unwrap();
+            let mut helper = helper.lock().unwrap();
             let node = &mut helper.node;
             let data = hex::decode(data_str).unwrap();
 
@@ -262,7 +270,8 @@ impl MultivmServer {
             hash.to_0x()
         })?;
 
-        module.register_method("mvm_debugAirdrop", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("mvm_debugAirdrop", move |params, _| {
             info!("mvm_debugAirdrop: {:#?}", params);
 
             let obj: HashMap<String, String> = params.sequence().next().unwrap();
@@ -272,7 +281,7 @@ impl MultivmServer {
             let address: EvmAddress = address_bytes.into();
             let multivm = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
 
-            let mut helper = self.helper.lock().unwrap();
+            let mut helper = helper.lock().unwrap();
             if let None = helper.account(&multivm.clone().into()) {
                 helper.create_evm_account(&multivm, address.clone());
                 info!("Account {} ({}) created", multivm, address);
@@ -281,7 +290,8 @@ impl MultivmServer {
             address.to_string()
         })?;
 
-        module.register_method("mvm_deployContract", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("mvm_deployContract", move |params, _| {
             info!("mvm_deployContract");
 
             let obj: HashMap<String, String> = params.sequence().next().unwrap();
@@ -291,30 +301,32 @@ impl MultivmServer {
             let sk = SigningKey::from_slice(&hex::decode(private_key).unwrap()).unwrap();
             let account_id = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
 
-            let mut helper = self.helper.lock().unwrap();
+            let mut helper = helper.lock().unwrap();
             helper.deploy_contract_with_key(&account_id, bytecode, sk);
             helper.produce_block(true);
 
             "0x0"
         })?;
 
-        module.register_method("mvm_viewCall", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("mvm_viewCall", move |params, _| {
             info!("mvm_viewCall, {:#?}", params.sequence());
 
             let mut seq = params.sequence();
             let contract_id: MultiVmAccountId = seq.next().unwrap();
             let call = seq.next().unwrap();
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
             let resp = helper.view(&contract_id.into(), call);
             info!("==== returned {:#?}", resp.to_0x());
 
             resp.to_0x()
         })?;
 
-        module.register_method("eth_call", |params, _| {
+        let helper = self.helper.clone();
+        module.register_method("eth_call", move |params, _| {
             info!("eth_call: {:#?}", params.sequence());
 
-            let helper = self.helper.lock().unwrap();
+            let helper = helper.lock().unwrap();
 
             let obj: HashMap<String, String> = params.sequence().next().expect("failed");
 

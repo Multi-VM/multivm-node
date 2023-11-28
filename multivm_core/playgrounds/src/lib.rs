@@ -27,22 +27,6 @@ pub fn install_tracing() {
     registry.init();
 }
 
-pub fn init_temp_node() -> MultivmNode {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-
-    let db_path = std::env::temp_dir()
-        .join("multivm_node")
-        .join(ts.to_string());
-    let mut node = multivm_runtime::MultivmNode::new(String::from(db_path.to_str().unwrap()));
-
-    node.init_genesis();
-
-    node
-}
-
 pub struct NodeHelper {
     pub node: MultivmNode,
 
@@ -54,24 +38,50 @@ impl NodeHelper {
         MultiVmAccountId::try_from("super.multivm").unwrap()
     }
 
-    pub fn new_temp() -> Self {
+    pub fn new(db_path: Option<String>) -> Self {
+        let db_path = db_path.unwrap_or_else(|| {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+            let db_path = std::env::temp_dir()
+                .join("multivm_node")
+                .join(ts.to_string());
+            db_path.into_os_string().into_string().unwrap()
+        });
+
         let mut helper = Self {
-            node: init_temp_node(),
+            node: multivm_runtime::MultivmNode::new(db_path),
             keys: Default::default(),
         };
 
-        helper.create_super_account_now();
+        let super_sk = multivm_primitives::k256::ecdsa::SigningKey::from_slice(
+            &hex::decode(Self::SUPER_ACCOUNT_SK.to_string()).unwrap(),
+        )
+        .unwrap();
 
+        helper
+            .keys
+            .insert(Self::super_account_id().into(), super_sk);
+
+        let super_account = helper.account(&Self::super_account_id().into());
+        match super_account {
+            None => {
+                helper.create_super_account_now();
+            }
+            _ => {}
+        }
         helper
     }
 
+    const SUPER_ACCOUNT_SK: &'static str =
+        "4146c7e323d0ddae7baebd8e0dccbee723c9795c904d004e43a33e17adc8aa2e";
+
     fn create_super_account_now(&mut self) {
-        let mut csprng = OsRng;
-        let sk = multivm_primitives::k256::ecdsa::SigningKey::random(&mut csprng);
         let account_id = Self::super_account_id();
-        self.keys.insert(account_id.clone().into(), sk.clone());
 
         let latest_block = self.node.latest_block();
+        let sk = self.keys.get(&account_id.into()).unwrap();
         let address: EvmAddress = (*sk.verifying_key()).into();
 
         let tx = multivm_primitives::TransactionBuilder::new(

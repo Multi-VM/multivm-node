@@ -30,3 +30,4 @@ eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
 ethers = "2.0.10"
 ethers-core = "2.0.10"
 lazy_static = "1.4.0"
+clap = { version = "4.4.10", features = ["derive"] }

@@ -48,7 +48,7 @@ pub struct Swap {
 fn main() {
     playgrounds::install_tracing();
 
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
 
     let token0_address = "usdt.multivm";
     let token1_address = "ethereum.multivm";

@@ -231,7 +231,8 @@ fn process_transaction(signed_tx: SignedTransaction, environment: EnvironmentCon
     if ctx.environment.block_height > 1 {
         let signer_id = system_env::signer();
 
-        let signer = account_management::account(&signer_id).expect("Signer not found"); // TODO: handle error
+        let signer = account_management::account(&signer_id)
+            .expect(&format!("Signer not found: {}", signer_id)); // TODO: handle error
 
         if !signed_tx.verify(signer.evm_address) {
             panic!("Invalid signature"); // TODO: handle error

@@ -20,14 +20,22 @@ pub struct MultivmNode {
 
 impl MultivmNode {
     pub fn new(db_path: String) -> Self {
-        debug!(db_path, "Starting node");
-        Self {
+        info!(db_path, "Starting node");
+
+        let mut node = Self {
             db: sled::open(db_path).unwrap(),
             txs_pool: std::collections::VecDeque::new(),
+        };
+
+        if !node.db.was_recovered() {
+            node.init_genesis();
         }
+
+        node
     }
 
     pub fn init_genesis(&mut self) {
+        info!("Initializing genesis block");
         let genesis_block = Block {
             height: 0,
             hash: [0; 32],
@@ -53,6 +61,8 @@ impl MultivmNode {
         self.db
             .insert(b"latest_block", borsh::to_vec(&block).unwrap())
             .unwrap();
+
+        self.db.flush().unwrap();
     }
 
     pub fn block_by_height(&self, height: u64) -> Option<Block> {
