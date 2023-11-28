@@ -1,28 +1,41 @@
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, prelude::*, registry, EnvFilter};
 
 use crate::server::MultivmServer;
 
 mod server;
 mod utils;
 
-static mut MULTIVM_SERVER: Option<MultivmServer> = None;
-
 pub fn install_tracing() {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap();
+    let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info,risc0_zkvm=warn".to_owned());
 
-    tracing_subscriber::FmtSubscriber::builder()
-        .with_env_filter(filter)
-        .finish()
-        .try_init()
-        .unwrap();
+    let main_layer = fmt::layer()
+        .event_format(fmt::format().with_ansi(true))
+        .with_filter(EnvFilter::from(filter));
+
+    let registry = registry().with(main_layer);
+
+    registry.init();
+}
+
+use clap::Parser;
+
+/// Start MultiVM Node
+#[derive(Parser, Debug)]
+#[command()]
+struct NodeOptions {
+    #[arg(short, long)]
+    db_path: Option<String>,
+
+    #[arg(short, long, default_value_t = 8080)]
+    port: u16,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     install_tracing();
 
-    unsafe {
-        MULTIVM_SERVER = Some(MultivmServer::new());
-        MULTIVM_SERVER.as_mut().unwrap().start().await
-    }
+    let options = NodeOptions::parse();
+
+    let server = MultivmServer::new(options.db_path);
+    server.start(options.port).await
 }
