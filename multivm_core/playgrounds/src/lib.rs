@@ -8,6 +8,7 @@ use multivm_primitives::{
 };
 use multivm_runtime::MultivmNode;
 use rand::rngs::OsRng;
+use tracing::info;
 
 pub fn install_tracing() {
     use tracing_subscriber::{fmt, prelude::*, registry, EnvFilter};
@@ -177,6 +178,8 @@ impl NodeHelper {
         key: SigningKey,
     ) -> Digest {
         let latest_block = self.node.latest_block();
+        self.keys
+            .insert(multivm_contract_id.clone().into(), key.clone());
         let (tx, attachs) =
             deploy_contract_tx(&latest_block, multivm_contract_id.clone().into(), code);
         let tx_hash = tx.hash();
@@ -202,6 +205,8 @@ impl NodeHelper {
             &latest_block,
         )
         .build();
+
+        info!("=== {}", signer_id);
 
         let tx_hash = tx.hash();
         let tx = SignedTransaction::new(tx, self.keys.get(signer_id).unwrap());
