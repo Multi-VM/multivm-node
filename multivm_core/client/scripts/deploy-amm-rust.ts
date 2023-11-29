@@ -109,22 +109,11 @@ async function main() {
 
   // read pool
   try {
-    const pools = await view("user1.multivm", {
-      method: "get_pools",
-      args: [],
-      gas: 0,
-      deposit: 0,
-    });
+    const pools = await view("user1.multivm", "get_pools", []);
     console.log(pools);
   } catch (error) {
     console.error(error);
   }
-
-  // for (const [index, signer] of signers.entries()) {
-  //   const address = await signer.getAddress();
-  //   const balance = await TOKEN.balanceOf(address);
-  //   console.log(`${address}: ${balance}`);
-  // }
 }
 
 main()
