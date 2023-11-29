@@ -30,8 +30,16 @@ export async function create_account(mvm: string, address: string) {
   ]);
 }
 
-export async function view(account: string, method: any) {
-  return await call("mvm_viewCall", [account, method]);
+export async function view(account: string, method: string, args: any) {
+  return await call("mvm_viewCall", [
+    account,
+    {
+      method: method,
+      args: args,
+      gas: 0, // ?
+      deposit: 0, // ?
+    },
+  ]);
 }
 
 export async function get_balance(address: string) {
