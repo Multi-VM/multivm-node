@@ -4,22 +4,31 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "compile": "hardhat compile",
+    "hardhat:clear": "rm -rf ./{artifacts,cache,typechain-types}",
+    "create:users": "hardhat run ./scripts/create-users.ts --network multivm",
+    "deploy:token": "hardhat run ./scripts/deploy-token.ts --network multivm",
+    "deploy:wrapped": "hardhat run ./scripts/deploy-wrapped.ts --network multivm",
+    "deploy:amm-rust": "hardhat run ./scripts/deploy-amm-rust.ts --network multivm",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
+    "@nomicfoundation/hardhat-ethers": "^3.0.5",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@openzeppelin/contracts": "^5.0.0",
     "axios": "^1.6.0",
     "chai": "^4.3.10",
+    "dotenv": "^16.3.1",
     "ethers": "^6.8.0",
     "hardhat": "^2.19.0",
     "request": "^2.88.2",
     "rpc-websocket-client": "^1.1.4"
   },
   "dependencies": {
-    "borsh": "^1.0.0",
-    "sync-request": "^6.1.0"
+    "@dao-xyz/borsh": "^5.1.8",
+    "borsh": "^2.0.0"
   }
 }

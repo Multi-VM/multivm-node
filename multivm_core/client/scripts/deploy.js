@@ -4,11 +4,13 @@ async function main() {
 
   const [user1, user2] = await ethers.getSigners();
 
-  const privateKey1 = "af1a53abf88f4821840a2934f3facfc8b1827cccd7f2e331375d2faf8c1032d2";
+  const privateKey1 =
+    "af1a53abf88f4821840a2934f3facfc8b1827cccd7f2e331375d2faf8c1032d2";
   const signingKey1 = new ethers.SigningKey("0x" + privateKey1);
   const user_addr1 = ethers.computeAddress("0x" + privateKey1);
 
-  const privateKey2 = "afdfd9c3d2095ef696594f6cedcae59e72dcd697e2a7521b1578140422a4f890";
+  const privateKey2 =
+    "afdfd9c3d2095ef696594f6cedcae59e72dcd697e2a7521b1578140422a4f890";
   const signingKey2 = new ethers.SigningKey("0x" + privateKey2);
   const user_addr2 = ethers.computeAddress("0x" + privateKey2);
 
@@ -19,8 +21,15 @@ async function main() {
   const token2 = await ethers.deployContract("Token");
   console.log("Tokens:", token1.target, token2.target);
 
-  const bytecode = fs.readFileSync("../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/amm");
-  deploy_multivm_contract_from_node("user1.multivm", privateKey1, toHexString(bytecode));
+  const bytecode = fs.readFileSync(
+    "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/amm"
+  );
+
+  deploy_multivm_contract_from_node(
+    "user1.multivm",
+    privateKey1,
+    toHexString(bytecode)
+  );
 
   console.log("Calling amm...");
 
@@ -30,19 +39,19 @@ async function main() {
     struct: {
       method: "string",
       args: {
-        array: { type: "u8" }
+        array: { type: "u8" },
       },
       gas: "u64",
-      deposit: "u128"
-    }
+      deposit: "u128",
+    },
   };
 
   // const empty_args_data = borsh.serialize({ array: { type: 'u8' }}, []);
-  // var data = borsh.serialize(schema, { 
+  // var data = borsh.serialize(schema, {
   //   method: "init",
   //   args: empty_args_data,
   //   gas: BigInt(300000),
-  //   deposit: BigInt(0)
+  //   deposit: BigInt(0),
   // });
   // await signer.sendTransaction({
   //   to: amm,
@@ -52,26 +61,23 @@ async function main() {
   const args_schema = {
     struct: {
       token0: "string",
-      token1: "string"
-    }
+      token1: "string",
+    },
   };
   const args_data = borsh.serialize(args_schema, {
-    token0: token1.target,//.replace("0x", ""),
-    token1: token2.target//.replace("0x", "")
-  }
-  );
+    token0: token1.target, //.replace("0x", ""),
+    token1: token2.target, //.replace("0x", "")
+  });
   data = borsh.serialize(schema, {
     method: "add_pool",
     args: args_data,
     gas: BigInt(300000),
-    deposit: BigInt(0)
+    deposit: BigInt(0),
   });
   await signer.sendTransaction({
     to: amm,
-    data: data
+    data: data,
   });
-
-
 
   return;
 
@@ -100,20 +106,22 @@ function call(method, params) {
       "Content-Type": "application/json",
     },
     json: {
-      "jsonrpc": "2.0",
-      "method": method,
-      "params": params,
-      "id": 1
-    }
+      jsonrpc: "2.0",
+      method: method,
+      params: params,
+      id: 1,
+    },
   });
   return JSON.parse(response.body.toString()).result;
 }
 
 function create_account(mvm, address) {
-  return call("mvm_debugAirdrop", [{
-    "multivm": mvm,
-    "address": address
-  }]);
+  return call("mvm_debugAirdrop", [
+    {
+      multivm: mvm,
+      address: address,
+    },
+  ]);
 }
 
 function get_balance(address) {
@@ -122,11 +130,13 @@ function get_balance(address) {
 
 // temporary solution until we have multivm structs in nodejs
 function deploy_multivm_contract_from_node(mvm, private_key, bytecode) {
-  return call("mvm_deployContract", [{
-    "multivm": mvm,
-    "private_key": private_key,
-    "bytecode": bytecode,
-  }]);
+  return call("mvm_deployContract", [
+    {
+      multivm: mvm,
+      private_key: private_key,
+      bytecode: bytecode,
+    },
+  ]);
 }
 
 function mvm_view(account, method, args) {
@@ -134,18 +144,18 @@ function mvm_view(account, method, args) {
     struct: {
       method: "string",
       args: {
-        array: { type: "u8" }
+        array: { type: "u8" },
       },
       gas: "u64",
-      deposit: "u128"
-    }
+      deposit: "u128",
+    },
   };
 
   const args_schema = {
     struct: {
       token0: "string",
-      token1: "string"
-    }
+      token1: "string",
+    },
   };
 
   // const args_data = borsh.serialize(args_schema, {
@@ -162,7 +172,7 @@ function mvm_view(account, method, args) {
 }
 
 function toHexString(byteArray) {
-  return Array.from(byteArray, function (byte) {
-    return ("0" + (byte & 0xFF).toString(16)).slice(-2);
-  }).join("")
+  return Array.from(byteArray, (byte) => {
+    return ("0" + (byte & 0xff).toString(16)).slice(-2);
+  }).join("");
 }
