@@ -282,10 +282,11 @@ impl AmmContract {
     }
 
     fn token_id(name: String) -> AccountId {
-        // AccountId::Evm(
-        //     EvmAddress::try_from(H160::from_str(name.as_str()).unwrap()).unwrap(),
-        // )
-        AccountId::MultiVm(MultiVmAccountId::try_from(name.clone()).unwrap())
+        if let Ok(h160) = H160::from_str(name.as_str()) {
+            AccountId::Evm(EvmAddress::try_from(h160).unwrap())
+        } else {
+            AccountId::MultiVm(MultiVmAccountId::try_from(name.clone()).unwrap())
+        }
     }
 }
 
