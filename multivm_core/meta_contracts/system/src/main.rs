@@ -461,7 +461,8 @@ mod account_management {
     }
 
     fn account_internal_id_by_evm_alias(evm_address: EvmAddress) -> Option<u128> {
-        system_env::get_storage(format!("accounts_aliases.evm.{}", evm_address))
+        let address = evm_address.to_string().to_lowercase();
+        system_env::get_storage(format!("accounts_aliases.evm.{}", address))
     }
 
     /// Updates existing account in the system

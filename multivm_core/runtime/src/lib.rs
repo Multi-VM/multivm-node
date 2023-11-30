@@ -2,10 +2,12 @@ use std::collections::HashMap;
 
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
+use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{Block, EnvironmentContext, SupportedTransaction};
 use tracing::{debug, info};
 use viewer::{SupportedView, Viewer};
 
+pub mod account;
 pub mod block;
 pub mod bootstraper;
 pub mod executor;
@@ -142,7 +144,11 @@ impl MultivmNode {
         block
     }
 
-    pub fn view(&self, view: SupportedView) -> Vec<u8> {
+    pub fn system_view<T: BorshSerialize>(&self, method: String, args: &T) -> Vec<u8> {
+        Viewer::view_system_meta_contract(method, args, self.db.clone())
+    }
+
+    pub fn contract_view(&self, view: SupportedView) -> Vec<u8> {
         Viewer::new(view, self.db.clone()).view()
     }
 }

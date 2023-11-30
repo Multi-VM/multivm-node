@@ -6,7 +6,7 @@ use multivm_primitives::{
     Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction,
     SupportedTransaction, Transaction,
 };
-use multivm_runtime::MultivmNode;
+use multivm_runtime::{account::Account, MultivmNode};
 use rand::rngs::OsRng;
 use tracing::info;
 
@@ -14,7 +14,8 @@ pub fn install_tracing() {
     use tracing_subscriber::{fmt, prelude::*, registry, EnvFilter};
 
     let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| {
-        "warn,multivm_runtime=info,multivm_primitives=debug,erc20,example_token,root,fibonacci=trace,benchmarks=trace"
+        // "warn,multivm_runtime=info,multivm_primitives=debug,erc20,example_token,root,fibonacci=trace,benchmarks=trace,amm=trace"
+        "warn,multivm_runtime=debug,multivm_primitives=debug,erc20,example_token,root,fibonacci=trace,benchmarks=trace,amm=trace"
             .to_owned()
     });
     println!("RUST_LOG={}", filter);
@@ -222,20 +223,7 @@ impl NodeHelper {
     pub fn account(&self, account_id: &AccountId) -> Option<Account> {
         let bytes = self
             .node
-            .view(multivm_runtime::viewer::SupportedView::MultiVm(
-                ContractCallContext {
-                    contract_id: AccountId::system_meta_contract(),
-                    contract_call: ContractCall::new(
-                        "account_info".to_string(),
-                        account_id,
-                        100_000_000,
-                        0,
-                    ),
-                    sender_id: AccountId::system_meta_contract(),
-                    signer_id: AccountId::system_meta_contract(),
-                    environment: EnvironmentContext { block_height: 0 },
-                },
-            ));
+            .system_view("account_info".to_string(), account_id);
 
         borsh::from_slice(&bytes).unwrap()
     }
@@ -243,7 +231,7 @@ impl NodeHelper {
     pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> Vec<u8> {
         let bytes = self
             .node
-            .view(multivm_runtime::viewer::SupportedView::MultiVm(
+            .contract_view(multivm_runtime::viewer::SupportedView::MultiVm(
                 ContractCallContext {
                     contract_id: contract_id.clone(),
                     contract_call: call,
@@ -322,14 +310,4 @@ fn deploy_contract_tx(
     let attachments = Attachments { contracts_images };
 
     (tx, attachments)
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
-pub struct Account {
-    internal_id: u128,
-    pub evm_address: EvmAddress,
-    pub multivm_account_id: Option<MultiVmAccountId>,
-    pub image_id: Option<[u32; 8]>,
-    pub balance: u128,
-    pub nonce: u64,
 }
