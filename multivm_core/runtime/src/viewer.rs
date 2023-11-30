@@ -4,8 +4,11 @@ use tracing::{debug, span, Level};
 
 use multivm_primitives::{
     syscalls::{GetStorageResponse, GET_STORAGE_CALL, SET_STORAGE_CALL},
-    AccountId, Commitment, ContractCallContext, EnvironmentContext, SupportedTransaction,
+    AccountId, Commitment, ContractCall, ContractCallContext, EnvironmentContext, EvmAddress,
+    MultiVmAccountId, SupportedTransaction,
 };
+
+use crate::account::{Account, Executable};
 
 const MAX_MEMORY: u32 = 0x10000000;
 const PAGE_SIZE: u32 = 0x400;
@@ -27,7 +30,7 @@ impl SupportedView {
     pub fn contract_id(&self) -> AccountId {
         match self {
             SupportedView::MultiVm(context) => context.contract_id.clone(),
-            SupportedView::Evm(_) => AccountId::system_meta_contract(),
+            SupportedView::Evm(call) => EvmAddress::from(call.to.clone()).into(),
         }
     }
 }
@@ -48,23 +51,79 @@ impl Viewer {
         Self { view, db }
     }
 
+    pub fn account_info(account_id: &AccountId, db: sled::Db) -> Option<Account> {
+        let bytes = Viewer::view_system_meta_contract("account_info".to_string(), account_id, db);
+        borsh::from_slice(&bytes).unwrap()
+    }
+
+    pub fn view_system_meta_contract<T: BorshSerialize>(
+        method: String,
+        args: &T,
+        db: sled::Db,
+    ) -> Vec<u8> {
+        let context = ContractCallContext {
+            contract_id: AccountId::system_meta_contract(),
+            contract_call: ContractCall::new(method, args, 100_000_000, 0),
+            sender_id: AccountId::system_meta_contract(),
+            signer_id: AccountId::system_meta_contract(),
+            environment: EnvironmentContext { block_height: 0 }, // TODO: hardcoded height
+        };
+
+        let action = Action::View(SupportedView::MultiVm(context.clone()), context.environment);
+        let input_bytes = borsh::to_vec(&action).unwrap();
+
+        let env = risc0_zkvm::ExecutorEnv::builder()
+            .add_input(&risc0_zkvm::serde::to_vec(&input_bytes).unwrap())
+            .session_limit(Some(usize::MAX))
+            .io_callback(GET_STORAGE_CALL, callback_on_system_get_storage(db.clone()))
+            .stdout(ContractLogger::new(AccountId::system_meta_contract()))
+            .build()
+            .unwrap();
+
+        let program = risc0_zkvm::Program::load_elf(
+            &meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
+            MAX_MEMORY,
+        )
+        .unwrap();
+        let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
+        let mut exec = risc0_zkvm::Executor::new(env, image).unwrap();
+
+        let session = exec.run().unwrap();
+
+        Commitment::try_from_bytes(session.journal.clone())
+            .expect("Corrupted journal")
+            .response
+    }
+
     pub fn view(self) -> Vec<u8> {
         let contract_id = self.view.contract_id();
 
-        let input_bytes = if contract_id == AccountId::system_meta_contract() {
-            let action = Action::View(
-                self.view.clone(),
-                EnvironmentContext {
-                    block_height: 2, // TODO: hardcoded height
-                },
-            );
-            borsh::to_vec(&action).unwrap()
-        } else {
-            let call = match self.view.clone() {
-                SupportedView::MultiVm(call) => call,
-                _ => unreachable!(),
-            };
-            borsh::to_vec(&call).unwrap()
+        let contract = Viewer::account_info(&contract_id, self.db.clone())
+            .context(contract_id.clone())
+            .expect("Loading storage for non-existent contract");
+
+        debug!(contract_id=?contract_id, executable=?contract.executable, "Viewing contract");
+        let (input_bytes, elf) = match contract.executable {
+            Some(Executable::MultiVm(_)) => match self.view.clone() {
+                SupportedView::MultiVm(view) => {
+                    let input_bytes = borsh::to_vec(&view).unwrap();
+                    (
+                        input_bytes,
+                        self.load_contract(&contract.multivm_account_id.unwrap())
+                            .unwrap(),
+                    )
+                }
+                _ => unreachable!("MultiVM view for non-MultiVM contract"),
+            },
+            Some(Executable::Evm()) => {
+                let action = borsh::to_vec(&Action::View(
+                    self.view.clone(),
+                    EnvironmentContext { block_height: 0 },
+                ))
+                .unwrap();
+                (action, meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec())
+            }
+            None => unreachable!("Viewing non-executable account"), // TODO: return error
         };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
@@ -75,14 +134,6 @@ impl Viewer {
             .stdout(ContractLogger::new(AccountId::system_meta_contract()))
             .build()
             .unwrap();
-
-        let elf = if contract_id == AccountId::system_meta_contract() {
-            meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec()
-        } else {
-            self.load_contract(contract_id.clone())
-                .context(format!("Load contract {:?}", contract_id))
-                .unwrap()
-        };
 
         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY).unwrap();
         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
@@ -95,7 +146,7 @@ impl Viewer {
             .response
     }
 
-    fn load_contract(&self, contract_id: AccountId) -> Result<Vec<u8>> {
+    fn load_contract(&self, contract_id: &MultiVmAccountId) -> Result<Vec<u8>> {
         let db_key = format!("contracts_code.{}", contract_id.to_string());
 
         let code = self
@@ -117,11 +168,24 @@ impl Viewer {
 
             let key = String::from_utf8(from_guest.into()).unwrap();
 
-            let db_key = format!(
-                "committed_storage.{}.{}",
-                self.view.contract_id().to_string(),
-                key
-            );
+            let storage_location = if self.view.contract_id() != AccountId::system_meta_contract() {
+                let contract = Viewer::account_info(&self.view.contract_id(), self.db.clone())
+                    .expect("Loading storage for non-existent contract");
+
+                let storage_location = match contract.executable {
+                    Some(Executable::MultiVm(_)) => contract
+                        .multivm_account_id
+                        .expect("Contract without MultiVmAccountId")
+                        .into(),
+                    Some(Executable::Evm()) => AccountId::system_meta_contract(),
+                    None => unreachable!("Loading storage for non-executable account"),
+                };
+                storage_location
+            } else {
+                AccountId::system_meta_contract()
+            };
+
+            let db_key = format!("committed_storage.{}.{}", storage_location, key);
 
             let storage = self
                 .db
@@ -150,6 +214,36 @@ impl Viewer {
         &'a self,
     ) -> impl Fn(risc0_zkvm::Bytes) -> risc0_zkvm::Result<risc0_zkvm::Bytes> + 'a {
         |_from_guest| Ok(Default::default())
+    }
+}
+
+fn callback_on_system_get_storage(
+    db: sled::Db,
+) -> impl Fn(risc0_zkvm::Bytes) -> risc0_zkvm::Result<risc0_zkvm::Bytes> {
+    move |from_guest| {
+        let span = span!(Level::DEBUG, "get_storage call handler");
+        let _enter = span.enter();
+
+        let key = String::from_utf8(from_guest.into()).unwrap();
+
+        let db_key = format!(
+            "committed_storage.{}.{}",
+            AccountId::system_meta_contract(),
+            key
+        );
+
+        let storage = db
+            .get(db_key)
+            .expect("Failed to get storage from db")
+            .map(|v| v.to_vec());
+
+        let response = GetStorageResponse { storage };
+
+        let response_bytes = borsh::to_vec(&response).unwrap();
+
+        debug!(contract=?AccountId::system_meta_contract(), key=?key, "Loading system storage");
+
+        Ok(response_bytes.into())
     }
 }
 
