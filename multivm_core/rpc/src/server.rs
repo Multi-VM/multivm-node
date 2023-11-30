@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, str::FromStr,
 };
 
 use borsh::BorshDeserialize;
@@ -313,7 +313,14 @@ impl MultivmServer {
             info!("mvm_viewCall, {:#?}", params.sequence());
 
             let mut seq = params.sequence();
-            let contract_id: MultiVmAccountId = seq.next().unwrap();
+            let contract_name: String = seq.next().unwrap();
+
+            let contract_id = if let Ok(h160) = H160::from_str(contract_name.as_str()) {
+                AccountId::Evm(EvmAddress::try_from(h160).unwrap())
+            } else {
+                AccountId::MultiVm(MultiVmAccountId::try_from(contract_name.clone()).unwrap())
+            };
+
             let call = seq.next().unwrap();
             let helper = helper.lock().unwrap();
             let resp = helper.view(&contract_id.into(), call);
