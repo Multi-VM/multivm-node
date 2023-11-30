@@ -11,7 +11,9 @@ use multivm_primitives::{
     AccountId, ContractCallContext,
 };
 
-use crate::{bootstraper::Action, outcome::ExecutionOutcome, utils};
+use crate::{
+    account::Executable, bootstraper::Action, outcome::ExecutionOutcome, utils, viewer::Viewer,
+};
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -34,25 +36,34 @@ impl Executor {
     }
 
     pub fn execute(self) -> ExecutionOutcome {
-        let (call_bytes, elf) = match self.context.contract_id.clone() {
-            AccountId::MultiVm(contract_id) => {
-                if self.context.contract_id != AccountId::system_meta_contract() {
+        let contract_id = self.context.contract_id.clone();
+        let contract = Viewer::account_info(&contract_id, self.db.clone())
+            .context(contract_id.clone())
+            .expect("Loading storage for non-existent contract");
+
+        let (call_bytes, elf) = match contract.executable {
+            Some(Executable::MultiVm(_)) => {
+                if self.context.contract_id == AccountId::system_meta_contract() {
+                    (
+                        borsh::to_vec(&Action::Call(self.context.clone())).unwrap(),
+                        meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
+                    )
+                } else {
                     let elf = self
                         .load_contract(contract_id.into())
                         .context(format!("Load contract {:?}", self.context.contract_id))
                         .unwrap();
                     (borsh::to_vec(&self.context).unwrap(), elf)
-                } else {
-                    let elf = meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec();
-                    let call = Action::Call(self.context.clone());
-                    (borsh::to_vec(&call).unwrap(), elf)
                 }
             }
-            AccountId::Evm(_contract_address) => {
-                let elf = meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec();
+            Some(Executable::Evm()) => {
                 let call = Action::EvmCall(self.context.clone());
-                (borsh::to_vec(&call).unwrap(), elf)
+                (
+                    borsh::to_vec(&call).unwrap(),
+                    meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
+                )
             }
+            None => unreachable!("Account is non-executable"),
         };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
@@ -107,6 +118,8 @@ impl Executor {
                 environment: self.context.environment.clone(),
             };
 
+            debug!(call_context=?call_context, "Executing cross contract call");
+
             let outcome = Executor::new(call_context, self.db.clone()).execute();
 
             let commitment = borsh::to_vec(&outcome.commitment).unwrap();
@@ -126,10 +139,16 @@ impl Executor {
 
             let key = String::from_utf8(from_guest.into()).unwrap();
 
-            // TODO: select using Executable variant, not AccountId
-            let storage_location = match self.context.contract_id.clone() {
-                AccountId::MultiVm(account_id) => account_id.into(),
-                AccountId::Evm(_) => AccountId::system_meta_contract(),
+            let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
+                .expect("Loading storage for non-existent contract");
+
+            let storage_location = match contract.executable {
+                Some(Executable::MultiVm(_)) => contract
+                    .multivm_account_id
+                    .expect("Contract without MultiVmAccountId")
+                    .into(),
+                Some(Executable::Evm()) => AccountId::system_meta_contract(),
+                None => unreachable!("Loading storage for non-executable account"),
             };
 
             let db_key = format!("committed_storage.{}.{}", storage_location, key);
@@ -170,10 +189,16 @@ impl Executor {
             let hash2 = algorithm.finalize_reset();
             assert_eq!(request.hash, hash2.as_slice());
 
-            // TODO: select using Executable variant, not AccountId
-            let storage_location = match self.context.contract_id.clone() {
-                AccountId::MultiVm(account_id) => account_id.into(),
-                AccountId::Evm(_) => AccountId::system_meta_contract(),
+            let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
+                .expect("Updating storage for non-existent contract");
+
+            let storage_location = match contract.executable {
+                Some(Executable::MultiVm(_)) => contract
+                    .multivm_account_id
+                    .expect("Contract without MultiVmAccountId")
+                    .into(),
+                Some(Executable::Evm()) => AccountId::system_meta_contract(),
+                None => unreachable!("Updating storage for non-executable account"),
             };
 
             debug!(contract=?storage_location, key=?request.key, new_hash = utils::bytes_to_hex(hash2.as_slice()), "Updating storage");
@@ -213,95 +238,3 @@ impl std::io::Write for ContractLogger {
         unimplemented!()
     }
 }
-
-// use std::sync::{Arc, RwLock};
-
-// use risc0_zkvm::{serde::to_vec, Executor, ExecutorEnv};
-// use multivm_primitives::{
-//     syscalls::{CROSS_CONTRACT_CALL, GET_ACCOUNT_MAPPING, GET_STORAGE_CALL, SET_STORAGE_CALL},
-//     AccountId, Digest, SignedTransaction, Transaction,
-// };
-
-// use crate::syscalls::{
-//     accounts_mapping::AccountsMappingHandler, cross_contract::CrossContractCallHandler,
-// };
-// use crate::{
-//     context::ExecutionContext,
-//     syscalls::storage::{GetStorageCallHandler, SetStorageCallHandler},
-// };
-
-// pub fn bootstrap_tx(db: sled::Db, signed_tx: SignedTransaction) -> Result<risc0_zkvm::Session> {
-//     let context = Arc::new(RwLock::new(ExecutionContext::new(
-//         multivm_primitives::ContractEntrypointContext {
-//             account: signed_tx.transaction.contract.clone(),
-//             method: signed_tx.transaction.method.clone(),
-//             args: signed_tx.transaction.args.clone(),
-//             attached_gas: signed_tx.transaction.attached_gas,
-//             sender: signed_tx.transaction.signer.clone(),
-//             signer: signed_tx.transaction.signer.clone(),
-//         },
-//         db,
-//     )));
-
-// }
-
-// pub fn execute(context: Arc<RwLock<ExecutionContext>>) -> Result<risc0_zkvm::Session> {
-//     let mut exec = {
-//         let ctx = context.read().unwrap();
-//         debug!(contract = ?ctx.call().account, "Executing contract");
-
-//         let env = ExecutorEnv::builder()
-//             .add_input(&to_vec(&ctx.call().into_bytes())?)
-//             .session_limit(Some(ctx.call().attached_gas.try_into().unwrap()))
-//             .syscall(
-//                 CROSS_CONTRACT_CALL,
-//                 CrossContractCallHandler::new(context.clone()),
-//             )
-//             .syscall(
-//                 GET_STORAGE_CALL,
-//                 GetStorageCallHandler::new(context.clone()),
-//             )
-//             .syscall(
-//                 SET_STORAGE_CALL,
-//                 SetStorageCallHandler::new(context.clone()),
-//             )
-//             .syscall(
-//                 GET_ACCOUNT_MAPPING,
-//                 AccountsMappingHandler::new(context.clone()),
-//             )
-//             .stdout(ContractLogger::new(context.clone()))
-//             .build()?;
-
-//         let elf = if ctx.call().account == AccountId::new(String::from("evm")) {
-//             meta_contracts::EVM_METACONTRACT_ELF.to_vec()
-//         } else {
-//             load_contract(&ctx.db, ctx.call().account.clone())
-//                 .context(format!("Load contract {:?}", ctx.call().account))?
-//         };
-
-//         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY)?;
-//         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE)?;
-//         risc0_zkvm::LocalExecutor::new(env, image, program.entry)
-//     };
-
-//     let session = exec.run()?;
-//     {
-//         let cycles = 2u64.pow(
-//             session
-//                 .segments
-//                 .iter()
-//                 .map(|s| s.resolve().unwrap().po2)
-//                 .sum::<usize>()
-//                 .try_into()
-//                 .unwrap(),
-//         );
-//         let mut ctx = context.write().unwrap();
-//         ctx.set_gas_usage(cycles);
-//     }
-
-//     // debug!("Start proving...");
-//     // let _receipt = session.prove();
-//     // debug!("Proved");
-
-//     Ok(session)
-// }

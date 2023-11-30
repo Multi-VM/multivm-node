@@ -212,7 +212,7 @@ fn main() {
         },
     });
 
-    let bytes = helper.node.view(view);
+    let bytes = helper.node.contract_view(view);
     let shares: HashMap<u128, u128> = BorshDeserialize::deserialize(&mut bytes.as_slice()).unwrap();
     info!("==== shares: {:#?}", shares);
 
@@ -229,7 +229,7 @@ fn main() {
             },
         });
 
-        let balance_bytes = helper.node.view(view);
+        let balance_bytes = helper.node.contract_view(view);
         let balance: u128 = BorshDeserialize::deserialize(&mut balance_bytes.as_slice()).unwrap();
         info!(
             "======== Balance of {:#?} is now {}",
@@ -248,7 +248,7 @@ fn main() {
         },
     });
 
-    let bytes = helper.node.view(view);
+    let bytes = helper.node.contract_view(view);
     let shares: HashMap<u128, u128> = BorshDeserialize::deserialize(&mut bytes.as_slice()).unwrap();
     info!("==== shares: {:#?}", shares);
 
@@ -290,7 +290,7 @@ fn main() {
             },
         });
 
-        let balance_bytes = helper.node.view(view);
+        let balance_bytes = helper.node.contract_view(view);
         let balance: u128 = BorshDeserialize::deserialize(&mut balance_bytes.as_slice()).unwrap();
         info!(
             "======== Balance of {:#?} after swap {}",
@@ -311,14 +311,17 @@ fn main() {
         },
     });
 
-    let pools_bytes = helper.node.view(view);
+    let pools_bytes = helper.node.contract_view(view);
     let pools: Vec<Pool> = BorshDeserialize::deserialize(&mut pools_bytes.as_slice()).unwrap();
     info!("======== pools: {:#?}", pools);
 
     info!("======= fetching one pool");
 
+    let amm_acc = helper.account(&amm).unwrap();
+
     let view = SupportedView::MultiVm(ContractCallContext {
-        contract_id: amm.clone(),
+        // contract_id: amm.clone(),
+        contract_id: amm_acc.evm_address.into(),
         contract_call: ContractCall::new_call("get_pool", &0u128),
         sender_id: nikita.clone(),
         signer_id: nikita.clone(),
@@ -326,8 +329,8 @@ fn main() {
             block_height: helper.node.latest_block().height,
         },
     });
-
-    let pool_bytes = helper.node.view(view);
+    info!("======== loading pool");
+    let pool_bytes = helper.node.contract_view(view);
     let pool: Option<Pool> = BorshDeserialize::deserialize(&mut pool_bytes.as_slice()).unwrap();
     info!("======== pool: {:#?}", pool);
 }

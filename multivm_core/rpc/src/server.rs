@@ -339,7 +339,7 @@ impl MultivmServer {
                 to: to.0,
                 input: payload,
             });
-            let result = helper.node.view(view);
+            let result = helper.node.contract_view(view);
             let deserialized: Vec<u8> =
                 BorshDeserialize::deserialize(&mut result.as_slice()).unwrap();
             info!("==== returned {:#?}", deserialized.to_0x());
