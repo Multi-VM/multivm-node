@@ -280,19 +280,27 @@ impl AmmContract {
 
         let amount_out = reserve_out * amount_in / (reserve_in + amount_in);
 
-        let _commitment = env::cross_contract_call(
-            token_in,
-            "transfer_from".to_string(),
-            0,
-            &(caller.clone(), amount_in),
-        );
+        let abi_bytes = include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi").to_vec();
+        let abi = ethabi::Contract::load(abi_bytes.as_slice()).unwrap();
+        
+        let contract = env::contract();
+        let commitment = env::cross_contract_call(AccountId::system_meta_contract(), "account_info".to_string(), 0, &contract.clone());
+        let contract_account = commitment.try_deserialize_response::<Option<Account>>().unwrap().unwrap();
 
-        let _commitment = env::cross_contract_call(
-            token_out,
-            "transfer".to_string(),
-            0,
-            &(caller.clone(), amount_out),
-        );
+        let transfer_from_function = abi.function("transferFrom").unwrap();
+        let encoded_input0 = transfer_from_function.encode_input(&vec![
+            ethabi::Token::Address(caller.evm().into()),
+            ethabi::Token::Address(contract_account.evm_address.clone().into()),
+            ethabi::Token::Uint(amount_in.into())
+        ]).unwrap();
+        env::cross_contract_call_raw(token_in.clone(), "transferFrom".to_string(), 0, encoded_input0.clone());
+
+        let transfer_function = abi.function("transfer").unwrap();
+        let encoded_input1 = transfer_function.encode_input(&vec![
+            ethabi::Token::Address(caller.evm().into()),
+            ethabi::Token::Uint(amount_out.into())
+        ]).unwrap();
+        env::cross_contract_call_raw(token_out.clone(), "transfer".to_string(), 0, encoded_input1.clone());
 
         if input.amount0_in > 0 {
             pool.reserve0 += amount_in;
