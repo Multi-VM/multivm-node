@@ -69,6 +69,12 @@ impl AmmContract {
             shares: HashMap::new(),
 
         };
+        
+        let caller = env::caller();
+        let commitment = env::cross_contract_call(AccountId::system_meta_contract(), "account_info".to_string(), 0, &caller.clone());
+        let account: Account = commitment.try_deserialize_response().unwrap();
+        println!("---- {:#?}", account);
+
         Self::save(state, ());
     }
 
