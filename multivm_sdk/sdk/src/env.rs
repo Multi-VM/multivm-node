@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use ethabi::Token;
 use once_cell::sync::Lazy;
 use risc0_zkvm::sha::rust_crypto::{Digest, Sha256};
 use std::{collections::HashMap, sync::Mutex};
@@ -85,6 +86,8 @@ impl Env {
         .to_vec();
 
         let commitment = Commitment::try_from_bytes(response).expect("Commitment is corrupted");
+        let response: Vec<Token>;// = commitment.try_deserialize_response().unwrap();
+        // println!("------ {}", commitment);
 
         // assert_eq!(req_hash, commitment.call_hash); // TODO: fix
 

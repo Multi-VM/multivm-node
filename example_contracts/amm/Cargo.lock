@@ -16,6 +16,8 @@ name = "amm"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ethabi",
+ "hex",
  "multivm_sdk",
  "multivm_sdk_macros",
  "num",
@@ -640,6 +642,7 @@ name = "multivm_sdk"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ethabi",
  "multivm_primitives",
  "multivm_sdk_macros",
  "once_cell",

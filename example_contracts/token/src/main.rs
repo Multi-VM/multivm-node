@@ -93,7 +93,7 @@ impl TokenContract {
         env::commit(())
     }
 
-    pub fn transfer_from(input: (AccountId, u128)) {
+    pub fn transferFrom(input: (AccountId, u128)) {
         let sender = input.0;
         let amount = input.1;
 

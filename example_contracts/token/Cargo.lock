@@ -644,6 +644,7 @@ name = "multivm_sdk"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ethabi",
  "multivm_primitives",
  "multivm_sdk_macros",
  "once_cell",
