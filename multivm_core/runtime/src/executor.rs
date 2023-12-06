@@ -37,33 +37,33 @@ impl Executor {
 
     pub fn execute(self) -> ExecutionOutcome {
         let contract_id = self.context.contract_id.clone();
-        let contract = Viewer::account_info(&contract_id, self.db.clone())
-            .context(contract_id.clone())
-            .expect("Loading storage for non-existent contract");
+        let (call_bytes, elf) = if contract_id != AccountId::system_meta_contract() {
+            let contract = Viewer::account_info(&contract_id, self.db.clone())
+                .context(contract_id.clone())
+                .expect("Loading storage for non-existent contract");
 
-        let (call_bytes, elf) = match contract.executable {
-            Some(Executable::MultiVm(_)) => {
-                if self.context.contract_id == AccountId::system_meta_contract() {
-                    (
-                        borsh::to_vec(&Action::Call(self.context.clone())).unwrap(),
-                        meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
-                    )
-                } else {
+            match contract.executable {
+                Some(Executable::MultiVm(_)) => {
                     let elf = self
                         .load_contract(contract_id.into())
                         .context(format!("Load contract {:?}", self.context.contract_id))
                         .unwrap();
                     (borsh::to_vec(&self.context).unwrap(), elf)
                 }
+                Some(Executable::Evm()) => {
+                    let call = Action::EvmCall(self.context.clone());
+                    (
+                        borsh::to_vec(&call).unwrap(),
+                        meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
+                    )
+                }
+                None => unreachable!("Account is non-executable"),
             }
-            Some(Executable::Evm()) => {
-                let call = Action::EvmCall(self.context.clone());
-                (
-                    borsh::to_vec(&call).unwrap(),
-                    meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
-                )
-            }
-            None => unreachable!("Account is non-executable"),
+        } else {
+            (
+                borsh::to_vec(&Action::Call(self.context.clone())).unwrap(),
+                meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
+            )
         };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
@@ -139,16 +139,21 @@ impl Executor {
 
             let key = String::from_utf8(from_guest.into()).unwrap();
 
-            let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
-                .expect("Loading storage for non-existent contract");
+            let storage_location = if self.context.contract_id == AccountId::system_meta_contract()
+            {
+                AccountId::system_meta_contract()
+            } else {
+                let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
+                    .expect("Loading storage for non-existent contract");
 
-            let storage_location = match contract.executable {
-                Some(Executable::MultiVm(_)) => contract
-                    .multivm_account_id
-                    .expect("Contract without MultiVmAccountId")
-                    .into(),
-                Some(Executable::Evm()) => AccountId::system_meta_contract(),
-                None => unreachable!("Loading storage for non-executable account"),
+                match contract.executable {
+                    Some(Executable::MultiVm(_)) => contract
+                        .multivm_account_id
+                        .expect("Contract without MultiVmAccountId")
+                        .into(),
+                    Some(Executable::Evm()) => AccountId::system_meta_contract(),
+                    None => unreachable!("Loading storage for non-executable account"),
+                }
             };
 
             let db_key = format!("committed_storage.{}.{}", storage_location, key);
@@ -189,16 +194,21 @@ impl Executor {
             let hash2 = algorithm.finalize_reset();
             assert_eq!(request.hash, hash2.as_slice());
 
-            let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
-                .expect("Updating storage for non-existent contract");
+            let storage_location = if self.context.contract_id == AccountId::system_meta_contract()
+            {
+                AccountId::system_meta_contract()
+            } else {
+                let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
+                    .expect("Loading storage for non-existent contract");
 
-            let storage_location = match contract.executable {
-                Some(Executable::MultiVm(_)) => contract
-                    .multivm_account_id
-                    .expect("Contract without MultiVmAccountId")
-                    .into(),
-                Some(Executable::Evm()) => AccountId::system_meta_contract(),
-                None => unreachable!("Updating storage for non-executable account"),
+                match contract.executable {
+                    Some(Executable::MultiVm(_)) => contract
+                        .multivm_account_id
+                        .expect("Contract without MultiVmAccountId")
+                        .into(),
+                    Some(Executable::Evm()) => AccountId::system_meta_contract(),
+                    None => unreachable!("Loading storage for non-executable account"),
+                }
             };
 
             debug!(contract=?storage_location, key=?request.key, new_hash = utils::bytes_to_hex(hash2.as_slice()), "Updating storage");
