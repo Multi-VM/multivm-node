@@ -258,6 +258,7 @@ fn process_call(contract_id: AccountId, call: ContractCall, ctx: ContractCallCon
             "deploy_contract" => deploy_multivm_contract(call),
             "init_debug_account" => init_debug_account(call.try_deserialize_args().unwrap()),
             "account_info" => account_info(ctx),
+            "transfer" => transfer(ctx),
             _ => panic!("Method not found"),
         }
     } else {
@@ -288,6 +289,12 @@ fn account_info(context: ContractCallContext) {
     let account_id: AccountId = context.contract_call.try_deserialize_args().unwrap();
     let account = account_management::account(&account_id);
     system_env::commit(account)
+}
+
+fn transfer(context: ContractCallContext) {
+    let (receiver, amount): (AccountId, u128) = context.contract_call.try_deserialize_args().unwrap();
+    let sender = account_management::account(&context.sender_id).unwrap();
+    account_management::transfer(sender, receiver, amount);
 }
 
 fn deploy_multivm_contract(call: ContractCall) {

@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use eth_primitive_types::{H160, U256};
-use ethabi::ethereum_types::U64;
+use ethabi::{ethereum_types::U64, Contract};
 use ethers_core::{
     types::{Signature, TransactionRequest},
     utils::rlp::Rlp,
@@ -13,7 +13,7 @@ use multivm_primitives::{
     EthereumTransactionRequest, EvmAddress, MultiVmAccountId, SignedTransaction,
     SupportedTransaction,
 };
-use multivm_runtime::viewer::SupportedView;
+use multivm_runtime::{account::Account, viewer::SupportedView};
 use playgrounds::NodeHelper;
 use tracing::info;
 
@@ -163,12 +163,53 @@ fn main() {
     // let result: String = String::from_utf8(commitment.response).unwrap();
     // info!("{}", result);
 
-    info!("======= Initialized 1");
+    info!("======= Initialized amm");
 
     helper.call_contract(&nikita, &amm, ContractCall::new_call("init", &()));
-    // helper.produce_block(true);
+    helper.produce_block(true);
 
-    info!("======= Initialized");
+    info!("======= Transferring tokens");
+
+    let output = helper.view(
+        &AccountId::system_meta_contract(),
+        ContractCall::new_call("account_info", &nikita),
+    );
+    let nikita_account: Option<Account> =
+        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+
+    let output = helper.view(
+        &AccountId::system_meta_contract(),
+        ContractCall::new_call("account_info", &alice),
+    );
+    let alice_account: Option<Account> =
+        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+
+    info!("{:#?}, {:#?}", nikita_account, alice_account);
+
+    helper.call_contract(
+        &nikita,
+        &AccountId::system_meta_contract(),
+        ContractCall::new_call("transfer", &(alice.clone(), 200000u128)),
+    );
+    helper.produce_block(true);
+
+    let output = helper.view(
+        &AccountId::system_meta_contract(),
+        ContractCall::new_call("account_info", &nikita),
+    );
+    let nikita_account: Option<Account> =
+        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+
+    let output = helper.view(
+        &AccountId::system_meta_contract(),
+        ContractCall::new_call("account_info", &alice),
+    );
+    let alice_account: Option<Account> =
+        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+
+    info!("{:#?}, {:#?}", nikita_account, alice_account);
+
+    info!("======= Add pool");
 
     let hash = helper.call_contract(
         &nikita,

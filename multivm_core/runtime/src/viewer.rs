@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use tracing::{debug, span, Level};
+use tracing::{debug, info, span, Level};
 
 use multivm_primitives::{
     syscalls::{GetStorageResponse, GET_STORAGE_CALL, SET_STORAGE_CALL},
@@ -98,32 +98,44 @@ impl Viewer {
     pub fn view(self) -> Vec<u8> {
         let contract_id = self.view.contract_id();
 
-        let contract = Viewer::account_info(&contract_id, self.db.clone())
-            .context(contract_id.clone())
-            .expect("Loading storage for non-existent contract");
+        debug!(contract_id=?contract_id, "Viewing contract");
 
-        debug!(contract_id=?contract_id, executable=?contract.executable, "Viewing contract");
-        let (input_bytes, elf) = match contract.executable {
-            Some(Executable::MultiVm(_)) => match self.view.clone() {
-                SupportedView::MultiVm(view) => {
-                    let input_bytes = borsh::to_vec(&view).unwrap();
-                    (
-                        input_bytes,
-                        self.load_contract(&contract.multivm_account_id.unwrap())
-                            .unwrap(),
-                    )
+        let (input_bytes, elf) = if contract_id != AccountId::system_meta_contract() {
+            let contract = Viewer::account_info(&contract_id, self.db.clone())
+                .context(contract_id.clone())
+                .expect("Loading storage for non-existent contract");
+
+            match contract.executable {
+                Some(Executable::MultiVm(_)) => match self.view.clone() {
+                    SupportedView::MultiVm(view) => {
+                        let input_bytes = borsh::to_vec(&view).unwrap();
+                        (
+                            input_bytes,
+                            self.load_contract(&contract.multivm_account_id.unwrap())
+                                .unwrap(),
+                        )
+                    }
+                    _ => unreachable!("MultiVM view for non-MultiVM contract"),
+                },
+                Some(Executable::Evm()) => {
+                    let action = borsh::to_vec(&Action::View(
+                        self.view.clone(),
+                        EnvironmentContext { block_height: 0 },
+                    ))
+                    .unwrap();
+                    (action, meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec())
                 }
-                _ => unreachable!("MultiVM view for non-MultiVM contract"),
-            },
-            Some(Executable::Evm()) => {
-                let action = borsh::to_vec(&Action::View(
+                None => unreachable!("Viewing non-executable account"),
+            }
+        } else {
+            (
+                borsh::to_vec(&Action::View(
                     self.view.clone(),
                     EnvironmentContext { block_height: 0 },
                 ))
-                .unwrap();
-                (action, meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec())
-            }
-            None => unreachable!("Viewing non-executable account"), // TODO: return error
+                .unwrap(),
+                meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
+            )
         };
 
         let env = risc0_zkvm::ExecutorEnv::builder()

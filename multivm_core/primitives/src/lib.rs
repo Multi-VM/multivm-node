@@ -190,7 +190,6 @@ impl std::fmt::Display for MultiVmAccountId {
 #[derive(
     Serialize,
     Deserialize,
-    Debug,
     BorshSerialize,
     BorshDeserialize,
     Clone,
@@ -229,6 +228,13 @@ impl From<VerifyingKey> for EvmAddress {
 }
 
 impl std::fmt::Display for EvmAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String = self.0.iter().map(|byte| format!("{:02x}", byte)).collect();
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Debug for EvmAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s: String = self.0.iter().map(|byte| format!("{:02x}", byte)).collect();
         write!(f, "{}", s)
