@@ -52,11 +52,7 @@ export async function get_balance(address: string) {
   ]).then((r) => BigInt(r.result).toString());
 }
 
-export async function deploy_contract(
-  mvm: string,
-  privateKey: string,
-  bytecode: string
-) {
+export async function deploy_contract(mvm: string, privateKey: string, bytecode: string) {
   return await call("mvm_deployContract", [
     {
       multivm: mvm,
@@ -66,10 +62,7 @@ export async function deploy_contract(
   ]);
 }
 
-export const toHexString = (byteArray: Buffer) =>
-  Array.from(byteArray, (byte) =>
-    ("0" + (byte & 0xff).toString(16)).slice(-2)
-  ).join("");
+export const toHexString = (byteArray: Buffer) => Array.from(byteArray, (byte) => ("0" + (byte & 0xff).toString(16)).slice(-2)).join("");
 
 export const transactionSchema = {
   struct: {
@@ -91,4 +84,38 @@ export const addPoolArgs = {
     token0: "string",
     token1: "string",
   },
+};
+
+export const addLiquidityArgs = {
+  struct: {
+    pool_id: "u128",
+    amount0: "u128",
+    amount1: "u128",
+  },
+};
+
+export const swapArgs = {
+  struct: {
+    pool_id: "u128",
+    amount0_in: "u128",
+    amount1_in: "u128",
+  },
+};
+
+export const PoolSchema = {
+  struct: {
+    id: "u128",
+    token0: { struct: { symbol: "string", address: "string" } },
+    token1: { struct: { symbol: "string", address: "string" } },
+    reserve0: "u128",
+    reserve1: "u128",
+    total_shares: "u128",
+  },
+};
+
+export const GetPoolSchema = {
+  option: PoolSchema,
+};
+export const GetPoolsSchema = {
+  option: PoolSchema,
 };

@@ -22,9 +22,8 @@
     "axios": "^1.6.0",
     "chai": "^4.3.10",
     "dotenv": "^16.3.1",
-    "ethers": "^6.8.0",
+    "ethers": "^6.9.0",
     "hardhat": "^2.19.0",
-    "request": "^2.88.2",
     "rpc-websocket-client": "^1.1.4"
   },
   "dependencies": {

@@ -3,10 +3,10 @@ benchmarks:
 	cd multivm_core && RUST_LOG=info cargo run --release --bin benchmarks
 
 build_server:
-	cd multivm_core && cargo +nightly build --release --bin server
+	cd multivm_core && cargo +nightly build --bin server
 
 build_example_contracts:
-	cd example_contracts && cargo build --release
+	cd example_contracts && cargo build
 
 start_server:
 	RUST_LOG=info multivm_core/target/release/server
