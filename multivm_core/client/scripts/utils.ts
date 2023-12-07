@@ -94,6 +94,12 @@ export const addLiquidityArgs = {
   },
 };
 
+export const removeLiquidityArgs = {
+  struct: {
+    pool_id: "u128",
+  },
+};
+
 export const swapArgs = {
   struct: {
     pool_id: "u128",
@@ -117,5 +123,5 @@ export const GetPoolSchema = {
   option: PoolSchema,
 };
 export const GetPoolsSchema = {
-  option: PoolSchema,
+  array: { type: PoolSchema },
 };
