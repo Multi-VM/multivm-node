@@ -60,6 +60,11 @@ async function main() {
     await token2.approve(amm.address, tokensSupplyAmount);
     token2Address = await token2.getAddress();
     console.log([token1Address, token2Address]);
+
+    await token1.connect(user).approve(amm.address, tokensSupplyAmount);
+    await token1.connect(amm).approve(user.address, tokensSupplyAmount);
+    await token2.connect(user).approve(amm.address, tokensSupplyAmount);
+    await token2.connect(amm).approve(user.address, tokensSupplyAmount);
   }
 
   async function transferTokens() {
