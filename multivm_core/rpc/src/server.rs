@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex}, str::FromStr,
+    str::FromStr,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
 use borsh::BorshDeserialize;
 use eth_primitive_types::H160;
-use ethers::{core::types::TransactionRequest, utils::rlp::Rlp};
 use ethers_core::k256::ecdsa::SigningKey;
 use hyper::Method;
 use jsonrpsee::server::Server;
@@ -23,6 +23,7 @@ use tracing::info;
 use crate::utils::{EthBlockOutput, EthTransaction, EthTransactionReceipt, From0x, To0x};
 
 static CHAIN_ID: u64 = 1044942;
+static INCORRECT_ARGS: &str = "\n🚨🚨🚨Incorrect arguments🚨🚨🚨\n";
 
 #[derive(Clone)]
 pub struct MultivmServer {
@@ -35,6 +36,11 @@ impl MultivmServer {
             helper: Arc::new(Mutex::new(NodeHelper::new(db_path))),
         }
     }
+
+    fn lock<'a>(helper: &'a Arc<Mutex<NodeHelper>>) -> MutexGuard<'a, NodeHelper> {
+        helper.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     pub async fn start(&self, port: u16) -> anyhow::Result<()> {
         let cors = CorsLayer::new()
             .allow_methods([Method::POST, Method::OPTIONS])
@@ -53,7 +59,7 @@ impl MultivmServer {
         })?;
         let helper = self.helper.clone();
         module.register_method("eth_blockNumber", move |_, _| {
-            let helper = helper.lock().unwrap();
+            let helper = Self::lock(&helper);
             let height = format!("0x{:x}", helper.node.latest_block().height);
             info!("eth_blockNumber: {}", height);
             height
@@ -61,8 +67,12 @@ impl MultivmServer {
         let helper = self.helper.clone();
         module.register_method("eth_getBalance", move |params, _| {
             info!("eth_getBalance: {:#?}", params);
-            let helper = helper.lock().unwrap();
-            let address: H160 = params.sequence().next::<String>().unwrap().from_0x();
+            let address: H160 = params
+                .sequence()
+                .next::<String>()
+                .expect(INCORRECT_ARGS)
+                .from_0x();
+            let helper = Self::lock(&helper);
             let account = helper.account(&AccountId::Evm(address.into()));
             let balance = account.map(|a| a.balance).unwrap_or_default();
             info!("returned: {}, hex: {}", balance, balance.to_0x());
@@ -71,8 +81,8 @@ impl MultivmServer {
         let helper = self.helper.clone();
         module.register_method("eth_getBlockByNumber", move |params, _| {
             info!("eth_getBlockByNumber: {:#?}", params.sequence());
-            let helper = helper.lock().unwrap();
-            let block_request = params.sequence().next::<String>().unwrap();
+            let block_request = params.sequence().next::<String>().expect(INCORRECT_ARGS);
+            let helper = Self::lock(&helper);
             let height = if block_request == "latest" {
                 helper.node.latest_block().height
             } else {
@@ -89,8 +99,8 @@ impl MultivmServer {
         let helper = self.helper.clone();
         module.register_method("eth_getBlockByHash", move |params, _| {
             info!("eth_getBlockByHash: {:#?}", params.sequence());
-            let helper = helper.lock().unwrap();
-            let block_request = params.sequence().next::<String>().unwrap();
+            let block_request = params.sequence().next::<String>().expect(INCORRECT_ARGS);
+            let helper = Self::lock(&helper);
             let height = if block_request == "latest" {
                 helper.node.latest_block().height
             } else {
@@ -103,9 +113,9 @@ impl MultivmServer {
         })?;
         let helper = self.helper.clone();
         module.register_method("eth_getTransactionReceipt", move |params, _| {
-            let hash = params.sequence().next::<String>().unwrap();
+            let hash = params.sequence().next::<String>().expect(INCORRECT_ARGS);
             info!("eth_getTransactionReceipt: \n\r{:#?}", hash);
-            let helper = helper.lock().unwrap();
+            let helper = Self::lock(&helper);
             for height in 1..=helper.node.latest_block().height {
                 let block = helper.node.block_by_height(height).unwrap();
                 for tx in block.txs.clone() {
@@ -178,7 +188,7 @@ impl MultivmServer {
             info!("eth_getCode: {:#?}", params);
             "0x1dfd14000"
         })?;
-        module.register_method("eth_estimateGas", |params, _| {
+        module.register_method("eth_estimateGas", |_, _| {
             info!("eth_estimateGas");
             "0x5208"
         })?;
@@ -186,10 +196,10 @@ impl MultivmServer {
         module.register_method("eth_getTransactionCount", move |params, _| {
             info!("eth_getTransactionCount {:#?}", params.sequence());
 
-            let address = params.sequence().next::<String>().unwrap();
+            let address = params.sequence().next::<String>().expect(INCORRECT_ARGS);
             let mut tx_count: usize = 0;
 
-            let helper = helper.lock().unwrap();
+            let helper = Self::lock(&helper);
             for height in 1..=helper.node.latest_block().height {
                 let block = helper.node.block_by_height(height).unwrap();
                 for tx in block.txs {
@@ -209,8 +219,8 @@ impl MultivmServer {
         module.register_method("eth_getTransactionByHash", move |params, _| {
             info!("eth_getTransactionByHash {:#?}", params.sequence());
 
-            let hash: String = params.sequence().next().unwrap();
-            let helper = helper.lock().unwrap();
+            let hash: String = params.sequence().next().expect(INCORRECT_ARGS);
+            let helper = Self::lock(&helper);
 
             for tx in helper.node.latest_block().txs {
                 if tx.hash().to_0x() == hash {
@@ -240,16 +250,22 @@ impl MultivmServer {
             let params_str = format!("{:#?}", params);
             info!(
                 "eth_sendRawTransaction {:#?}",
-                // if params_str.len() > 100 {
-                //     "<params too long>"
-                // } else {
-                params_str.as_str() // }
+                if params_str.len() > 100 {
+                    "<params too long>"
+                } else {
+                    params_str.as_str()
+                }
             );
 
-            let data_str: String = params.sequence().next::<String>().unwrap().from_0x();
-            let mut helper = helper.lock().unwrap();
+            let data_str: String = params
+                .sequence()
+                .next::<String>()
+                .expect(INCORRECT_ARGS)
+                .from_0x();
+            let data = hex::decode(data_str).expect(INCORRECT_ARGS);
+
+            let mut helper = Self::lock(&helper);
             let node = &mut helper.node;
-            let data = hex::decode(data_str).unwrap();
 
             let rlp = ethers_core::utils::rlp::Rlp::new(&data);
             let (tx, sig) =
@@ -274,14 +290,18 @@ impl MultivmServer {
         module.register_method("mvm_debugAirdrop", move |params, _| {
             info!("mvm_debugAirdrop: {:#?}", params);
 
-            let obj: HashMap<String, String> = params.sequence().next().unwrap();
-            let multivm_name = obj.get("multivm").unwrap();
-            let address_str: String = obj.get("address").unwrap().from_0x();
-            let address_bytes: [u8; 20] = hex::decode(address_str).unwrap().try_into().unwrap();
+            let obj: HashMap<String, String> = params.sequence().next().expect(INCORRECT_ARGS);
+            let multivm_name = obj.get("multivm").expect(INCORRECT_ARGS);
+            let address_str: String = obj.get("address").expect(INCORRECT_ARGS).from_0x();
+            let address_bytes: [u8; 20] = hex::decode(address_str)
+                .expect(INCORRECT_ARGS)
+                .try_into()
+                .expect(INCORRECT_ARGS);
             let address: EvmAddress = address_bytes.into();
-            let multivm = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
+            let multivm =
+                MultiVmAccountId::try_from(multivm_name.to_string()).expect(INCORRECT_ARGS);
 
-            let mut helper = helper.lock().unwrap();
+            let mut helper = Self::lock(&helper);
             if let None = helper.account(&multivm.clone().into()) {
                 helper.create_evm_account(&multivm, address.clone());
                 info!("Account {} ({}) created", multivm, address);
@@ -294,18 +314,20 @@ impl MultivmServer {
         module.register_method("mvm_deployContract", move |params, _| {
             info!("mvm_deployContract");
 
-            let obj: HashMap<String, String> = params.sequence().next().unwrap();
-            let bytecode: Vec<u8> = obj.get("bytecode").unwrap().from_0x();
-            let multivm_name = obj.get("multivm").unwrap();
-            let private_key: String = obj.get("private_key").unwrap().from_0x();
-            let sk = SigningKey::from_slice(&hex::decode(private_key).unwrap()).unwrap();
-            let account_id = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
+            let obj: HashMap<String, String> = params.sequence().next().expect(INCORRECT_ARGS);
+            let bytecode: Vec<u8> = obj.get("bytecode").expect(INCORRECT_ARGS).from_0x();
+            let multivm_name = obj.get("multivm").expect(INCORRECT_ARGS);
+            let private_key: String = obj.get("private_key").expect(INCORRECT_ARGS).from_0x();
+            let sk = SigningKey::from_slice(&hex::decode(private_key).expect(INCORRECT_ARGS))
+                .expect(INCORRECT_ARGS);
+            let account_id =
+                MultiVmAccountId::try_from(multivm_name.to_string()).expect(INCORRECT_ARGS);
 
-            let mut helper = helper.lock().unwrap();
+            let mut helper = Self::lock(&helper);
             helper.deploy_contract_with_key(&account_id, bytecode, sk);
             helper.produce_block(true);
 
-            "0x0"
+            Some("0x0")
         })?;
 
         let helper = self.helper.clone();
@@ -313,7 +335,7 @@ impl MultivmServer {
             info!("mvm_viewCall, {:#?}", params.sequence());
 
             let mut seq = params.sequence();
-            let contract_name: String = seq.next().unwrap();
+            let contract_name: String = seq.next().expect(INCORRECT_ARGS);
 
             let contract_id = if let Ok(h160) = H160::from_str(contract_name.as_str()) {
                 AccountId::Evm(EvmAddress::try_from(h160).unwrap())
@@ -321,8 +343,8 @@ impl MultivmServer {
                 AccountId::MultiVm(MultiVmAccountId::try_from(contract_name.clone()).unwrap())
             };
 
-            let call = seq.next().unwrap();
-            let helper = helper.lock().unwrap();
+            let call = seq.next().expect(INCORRECT_ARGS);
+            let helper = Self::lock(&helper);
             let resp = helper.view(&contract_id.into(), call);
             info!("==== returned {:#?}", resp.to_0x());
 
@@ -333,19 +355,18 @@ impl MultivmServer {
         module.register_method("eth_call", move |params, _| {
             info!("eth_call: {:#?}", params.sequence());
 
-            let helper = helper.lock().unwrap();
-
-            let obj: HashMap<String, String> = params.sequence().next().expect("failed");
+            let obj: HashMap<String, String> = params.sequence().next().expect(INCORRECT_ARGS);
 
             let from: Option<H160> = obj.get("from").map(|from| from.from_0x());
-            let to: H160 = obj.get("to").unwrap().from_0x();
-            let data: String = obj.get("data").unwrap().from_0x();
-            let payload = hex::decode(data).unwrap();
+            let to: H160 = obj.get("to").expect(INCORRECT_ARGS).from_0x();
+            let data: String = obj.get("data").expect(INCORRECT_ARGS).from_0x();
+            let payload = hex::decode(data).expect(INCORRECT_ARGS);
             let view = SupportedView::Evm(EvmCall {
                 from: from.map(|f| f.0),
                 to: to.0,
                 input: payload,
             });
+            let helper = Self::lock(&helper);
             let result = helper.node.contract_view(view);
             let deserialized: Vec<u8> =
                 BorshDeserialize::deserialize(&mut result.as_slice()).unwrap();
