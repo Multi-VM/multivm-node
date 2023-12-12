@@ -1,7 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{EvmAddress, MultiVmAccountId};
+use serde::Serialize;
 
-#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, Serialize)]
 pub enum Executable {
     Evm(),
     MultiVm(MultiVmExecutable),
@@ -13,12 +14,12 @@ impl From<MultiVmExecutable> for Executable {
     }
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, Serialize)]
 pub struct MultiVmExecutable {
     pub image_id: [u32; 8],
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, Serialize)]
 pub struct Account {
     internal_id: u128,
     pub evm_address: EvmAddress,

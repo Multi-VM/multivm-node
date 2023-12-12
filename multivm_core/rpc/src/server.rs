@@ -75,7 +75,7 @@ impl MultivmServer {
             let helper = Self::lock(&helper);
             let account = helper.account(&AccountId::Evm(address.into()));
             let balance = account.map(|a| a.balance).unwrap_or_default();
-            info!("returned: {}, hex: {}", balance, balance.to_0x());
+            info!("Response: {}, hex: {}", balance, balance.to_0x());
             balance.to_0x()
         })?;
         let helper = self.helper.clone();
@@ -93,7 +93,7 @@ impl MultivmServer {
                 .block_by_height(height)
                 .expect(format!("No block at height {}", height).as_str());
             let output = EthBlockOutput::from(&block);
-            info!("returned: {:#?}", output);
+            info!("Response: {:#?}", output);
             json!(output)
         })?;
         let helper = self.helper.clone();
@@ -108,7 +108,7 @@ impl MultivmServer {
             };
             let block = helper.node.latest_block();
             let output = EthBlockOutput::from(&block);
-            info!("returned: {:#?}", output);
+            info!("Response: {:#?}", output);
             json!(output)
         })?;
         let helper = self.helper.clone();
@@ -121,12 +121,12 @@ impl MultivmServer {
                 for tx in block.txs.clone() {
                     if tx.hash().to_0x() == hash {
                         let receipt = EthTransactionReceipt::from(&tx, hash, &block);
-                        info!("=== returned {:#?}", receipt);
+                        info!("Response: {:#?}", receipt);
                         return json!(receipt);
                     }
                 }
             }
-            info!("=== returned empty receipt {{}}");
+            info!("Response: {{}}");
             return json!([]);
         })?;
 
@@ -212,7 +212,7 @@ impl MultivmServer {
                 }
             }
 
-            info!("returned count {}", tx_count.to_0x());
+            info!("Response: {}", tx_count.to_0x());
             tx_count.to_0x()
         })?;
         let helper = self.helper.clone();
@@ -236,13 +236,13 @@ impl MultivmServer {
                                 hash,
                                 helper.node.latest_block(),
                             ));
-                            info!("==== {:#?}", result);
+                            info!("Response: {:#?}", result);
                             return result;
                         }
                     }
                 }
             }
-
+            info!("Response: null");
             return None;
         })?;
         let helper = self.helper.clone();
@@ -281,7 +281,7 @@ impl MultivmServer {
             node.add_tx(tx);
             node.produce_block(true);
 
-            info!("==== returned {:#?}", hash.to_0x());
+            info!("Response: {:#?}", hash.to_0x());
 
             hash.to_0x()
         })?;
@@ -346,7 +346,7 @@ impl MultivmServer {
             let call = seq.next().expect(INCORRECT_ARGS);
             let helper = Self::lock(&helper);
             let resp = helper.view(&contract_id.into(), call);
-            info!("==== returned {:#?}", resp.to_0x());
+            info!("Response: {:#?}", resp.to_0x());
 
             resp.to_0x()
         })?;
@@ -370,8 +370,28 @@ impl MultivmServer {
             let result = helper.node.contract_view(view);
             let deserialized: Vec<u8> =
                 BorshDeserialize::deserialize(&mut result.as_slice()).unwrap();
-            info!("==== returned {:#?}", deserialized.to_0x());
+            info!("Response: {:#?}", deserialized.to_0x());
             deserialized.to_0x()
+        })?;
+
+        let helper = self.helper.clone();
+        module.register_method("mvm_accountInfo", move |params, _| {
+            info!("mvm_accountInfo, {:#?}", params.sequence());
+
+            let mut seq = params.sequence();
+            let address_name: String = seq.next().expect(INCORRECT_ARGS);
+
+            let account_id = if let Ok(h160) = H160::from_str(address_name.as_str()) {
+                AccountId::Evm(EvmAddress::try_from(h160).unwrap())
+            } else {
+                AccountId::MultiVm(MultiVmAccountId::try_from(address_name.clone()).unwrap())
+            };
+
+            let helper = Self::lock(&helper);
+            let account = helper.account(&account_id);
+            info!("Response: {}", json!(account));
+
+            json!(account)
         })?;
 
         for method in METHODS.iter() {
