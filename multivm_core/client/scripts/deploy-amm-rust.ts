@@ -221,6 +221,9 @@ async function main() {
   await ammAddLiquidity()
     .then(async () => await getTokenMetadata())
     .then(async () => await getPoolsMetadata());
+
+  return;
+
   await ammSwap()
     .then(async () => await getTokenMetadata())
     .then(async () => await getPoolsMetadata());
