@@ -6,7 +6,7 @@ pub use k256;
 
 pub mod syscalls;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 pub const CHAIN_ID: u64 = 1044942;
 
@@ -72,6 +72,7 @@ pub struct EnvironmentContext {
 pub enum AccountId {
     MultiVm(MultiVmAccountId),
     Evm(EvmAddress),
+    Solana(SolanaAddress),
 }
 
 impl AccountId {
@@ -83,14 +84,21 @@ impl AccountId {
     pub fn multivm(&self) -> MultiVmAccountId {
         match self {
             AccountId::MultiVm(account_id) => account_id.clone(),
-            AccountId::Evm(_) => panic!("Not a multiVM account"),
+            _ => panic!("Not a multiVM account"),
         }
     }
 
     pub fn evm(&self) -> EvmAddress {
         match self {
-            AccountId::MultiVm(_) => panic!("Not a EVM account"),
             AccountId::Evm(address) => address.clone(),
+            _ => panic!("Not a EVM account"),
+        }
+    }
+
+    pub fn solana(&self) -> SolanaAddress {
+        match self {
+            AccountId::Solana(address) => address.clone(),
+            _ => panic!("Not a Solana account"),
         }
     }
 }
@@ -107,11 +115,18 @@ impl From<EvmAddress> for AccountId {
     }
 }
 
+impl From<SolanaAddress> for AccountId {
+    fn from(id: SolanaAddress) -> Self {
+        Self::Solana(id)
+    }
+}
+
 impl std::fmt::Display for AccountId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AccountId::MultiVm(id) => write!(f, "{}", id),
             AccountId::Evm(id) => write!(f, "{}", id),
+            AccountId::Solana(id) => write!(f, "{}", id),
         }
     }
 }
@@ -201,6 +216,12 @@ impl std::fmt::Display for MultiVmAccountId {
 )]
 pub struct EvmAddress([u8; 20]);
 
+impl EvmAddress {
+    pub fn to_bytes(&self) -> [u8; 20] {
+        self.0
+    }
+}
+
 impl From<[u8; 20]> for EvmAddress {
     fn from(id: [u8; 20]) -> Self {
         Self(id)
@@ -210,6 +231,19 @@ impl From<[u8; 20]> for EvmAddress {
 impl From<eth_primitive_types::H160> for EvmAddress {
     fn from(id: eth_primitive_types::H160) -> Self {
         Self(id.into())
+    }
+}
+
+impl TryFrom<String> for EvmAddress {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let bytes = ethers_core::utils::hex::decode(value.replace("0x", ""))?;
+        let arr: [u8; 20] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid length"))?;
+
+        Ok(arr.into())
     }
 }
 
@@ -237,6 +271,53 @@ impl std::fmt::Display for EvmAddress {
 impl std::fmt::Debug for EvmAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s: String = self.0.iter().map(|byte| format!("{:02x}", byte)).collect();
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
+    Ord,
+)]
+pub struct SolanaAddress([u8; 32]);
+
+impl SolanaAddress {
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl From<[u8; 32]> for SolanaAddress {
+    fn from(id: [u8; 32]) -> Self {
+        Self(id)
+    }
+}
+
+impl FromStr for SolanaAddress {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let bytes = bs58::decode(value).into_vec()?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid length"))?;
+
+        Ok(arr.into())
+    }
+}
+
+impl std::fmt::Display for SolanaAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = bs58::encode(&self.0).into_string();
         write!(f, "{}", s)
     }
 }
@@ -377,6 +458,7 @@ impl EthereumTransactionRequest {
 pub enum SupportedTransaction {
     MultiVm(SignedTransaction),
     Evm(EthereumTransactionRequest),
+    Solana(Vec<u8>),
 }
 
 impl SupportedTransaction {
@@ -384,24 +466,27 @@ impl SupportedTransaction {
         match self {
             Self::MultiVm(tx) => tx.transaction.hash(),
             Self::Evm(tx) => ethers_core::utils::keccak256::<Vec<u8>>(tx.0.clone().into()),
+            Self::Solana(tx) => ethers_core::utils::keccak256::<Vec<u8>>(tx.clone().into()),
         }
     }
 
     pub fn to_system(&self) -> bool {
         match self {
             Self::MultiVm(tx) => tx.transaction.receiver_id == AccountId::system_meta_contract(),
-            SupportedTransaction::Evm(_) => true,
+            Self::Evm(_) => true,
+            Self::Solana(_) => false,
         }
     }
 
     pub fn signer(&self) -> AccountId {
         match self {
             Self::MultiVm(tx) => tx.transaction.signer_id.clone(),
-            SupportedTransaction::Evm(tx) => {
+            Self::Evm(tx) => {
                 let (tx_request, _sig) = tx.decode();
                 let from = tx_request.from.unwrap();
                 AccountId::Evm(from.into())
             }
+            Self::Solana(_) => todo!(),
         }
     }
 }

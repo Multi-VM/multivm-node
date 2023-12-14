@@ -50,6 +50,7 @@ impl Bootstraper {
         let attachments = match &transaction {
             SupportedTransaction::MultiVm(multivm_tx) => Some(multivm_tx.attachments.clone()),
             SupportedTransaction::Evm(_) => None,
+            SupportedTransaction::Solana(_) => None,
         }
         .flatten();
 

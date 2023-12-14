@@ -36,6 +36,7 @@ impl UnprovedBlock {
                                 }
                                 // TODO: replace with proper method
                                 SupportedTransaction::Evm(_) => {vec!["evm call".to_string()]}
+                                SupportedTransaction::Solana(_) => {vec!["solana call".to_string()]}
                             };
 
                         let start = std::time::Instant::now();

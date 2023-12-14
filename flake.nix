@@ -19,6 +19,7 @@
                 pkgs.pkg-config
                 pkgs.linuxPackages.nvidia_x11
                 pkgs.cudatoolkit
+                pkgs.nodejs_20
               ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;

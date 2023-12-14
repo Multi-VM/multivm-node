@@ -57,6 +57,13 @@ impl Executor {
                         meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
                     )
                 }
+                Some(Executable::Solana(_)) => {
+                    let elf = self
+                        .load_contract(contract.multivm_account_id.unwrap().into()) // TODO: use solana address
+                        .context(format!("Load contract {:?}", self.context.contract_id))
+                        .unwrap();
+                    (borsh::to_vec(&self.context).unwrap(), elf)
+                }
                 None => unreachable!("Account is non-executable"),
             }
         } else {
@@ -153,7 +160,7 @@ impl Executor {
                     .expect("Loading storage for non-existent contract");
 
                 match contract.executable {
-                    Some(Executable::MultiVm(_)) => contract
+                    Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => contract
                         .multivm_account_id
                         .expect("Contract without MultiVmAccountId")
                         .into(),
@@ -208,7 +215,7 @@ impl Executor {
                     .expect("Loading storage for non-existent contract");
 
                 match contract.executable {
-                    Some(Executable::MultiVm(_)) => contract
+                    Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => contract
                         .multivm_account_id
                         .expect("Contract without MultiVmAccountId")
                         .into(),

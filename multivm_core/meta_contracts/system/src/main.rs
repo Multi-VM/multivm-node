@@ -3,7 +3,7 @@
 use core::panic;
 use std::io::Read;
 
-use account_management::{update_account, MultiVmExecutable};
+use account_management::{update_account, MultiVmExecutable, SolanaExecutable};
 use borsh::{BorshDeserialize, BorshSerialize};
 use ethers_core::types::NameOrAddress;
 use multivm_primitives::{
@@ -28,6 +28,7 @@ struct AccountCreationRequest {
 #[derive(BorshDeserialize, BorshSerialize)]
 struct ContractDeploymentArgs {
     pub image_id: [u32; 8],
+    pub contract_type: String, // TODO: use enum
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -64,6 +65,7 @@ fn entrypoint() {
         Action::ExecuteTransaction(tx, environment) => match tx {
             SupportedTransaction::MultiVm(tx) => process_transaction(tx, environment),
             SupportedTransaction::Evm(tx) => process_ethereum_transaction(tx, environment),
+            SupportedTransaction::Solana(tx) => process_solana_transaction(tx, environment),
         },
         Action::View(v, environment) => match v {
             SupportedView::MultiVm(context) => view(context),
@@ -130,6 +132,17 @@ fn process_ethereum_transaction(tx: EthereumTransactionRequest, environment: Env
                         ctx,
                     )
                 }
+                Some(Executable::Solana(_)) => {
+                    let Some(solana_address) = contract.solana_address else {
+                        panic!("Contract is Solana executable but has no solana account");
+                    };
+                    process_call(
+                        solana_address.into(),
+                        borsh::from_slice(&data)
+                            .expect("multivm tx data was incorrecly serialized"),
+                        ctx,
+                    )
+                }
                 _ => panic!("Executable not supported"),
             }
         }
@@ -162,6 +175,10 @@ impl TransactionFlow<EthereumTxFlow>
 
         EthereumTxFlow::Call(receiver_id, data)
     }
+}
+
+fn process_solana_transaction(_bytes: Vec<u8>, _environment: EnvironmentContext) {
+    unimplemented!();
 }
 
 fn view(context: ContractCallContext) {
@@ -313,12 +330,23 @@ fn deploy_multivm_contract(call: ContractCall) {
         account_management::account(&system_env::signer()).expect("Account not found"); // TODO: handle error
 
     system_env::deploy_contract(system_env::signer(), req.image_id);
-    account.executable = Some(
-        MultiVmExecutable {
-            image_id: req.image_id,
+    account.executable = match req.contract_type.as_str() {
+        "mvm" => Some(
+            MultiVmExecutable {
+                image_id: req.image_id,
+            }
+            .into(),
+        ),
+        "svm" => Some(
+            SolanaExecutable {
+                image_id: req.image_id,
+            }
+            .into(),
+        ),
+        _ => {
+            panic!("Unknown contract type")
         }
-        .into(),
-    );
+    };
     update_account(account);
     system_env::commit(());
 }
@@ -347,7 +375,7 @@ fn contract_call(contract_id: AccountId, call: ContractCall) {
 
 mod account_management {
     use borsh::{BorshDeserialize, BorshSerialize};
-    use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId};
+    use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId, SolanaAddress};
 
     use crate::system_env;
 
@@ -355,11 +383,18 @@ mod account_management {
     pub enum Executable {
         Evm(),
         MultiVm(MultiVmExecutable),
+        Solana(SolanaExecutable),
     }
 
     impl From<MultiVmExecutable> for Executable {
         fn from(executable: MultiVmExecutable) -> Self {
             Self::MultiVm(executable)
+        }
+    }
+
+    impl From<SolanaExecutable> for Executable {
+        fn from(executable: SolanaExecutable) -> Self {
+            Self::Solana(executable)
         }
     }
 
@@ -369,10 +404,16 @@ mod account_management {
     }
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+    pub struct SolanaExecutable {
+        pub image_id: [u32; 8],
+    }
+
+    #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
     pub struct Account {
         internal_id: u128,
         pub evm_address: EvmAddress,
         pub multivm_account_id: Option<MultiVmAccountId>,
+        pub solana_address: Option<SolanaAddress>,
         pub executable: Option<Executable>,
         pub balance: u128,
         pub nonce: u64,
@@ -394,14 +435,28 @@ mod account_management {
                 panic!("Account alias already exists"); // TODO: handle error
             }
 
+            let mut temp_solana_address = [0u8; 32];
+            temp_solana_address[0..20].copy_from_slice(&address.to_bytes());
+
             let account = Self {
                 internal_id: increment_account_counter(),
                 evm_address: address,
                 multivm_account_id,
+                solana_address: Some(temp_solana_address.into()),
                 executable: None,
                 balance: 0,
                 nonce: 0,
             };
+
+            println!(
+                "account created: MultiVM: ({:?}), EVM: ({:?}), Solana: ({:?})",
+                account
+                    .multivm_account_id
+                    .clone()
+                    .map(|id| { id.to_string() }),
+                account.evm_address.clone().to_string(),
+                account.solana_address.clone().unwrap().to_string(),
+            );
 
             register_account(account.clone());
             account
@@ -415,6 +470,9 @@ mod account_management {
                 account_internal_id_by_multivm_alias(multivm_account_id)
             }
             AccountId::Evm(evm_address) => account_internal_id_by_evm_alias(evm_address),
+            AccountId::Solana(solana_address) => {
+                account_internal_id_by_solana_alias(solana_address)
+            }
         };
 
         id.map(|id| account_by_internal_id(id).expect("Alias points to non-existing account"))
@@ -438,6 +496,9 @@ mod account_management {
                 account_internal_id_by_multivm_alias(multivm_account_id)
             }
             AccountId::Evm(evm_address) => account_internal_id_by_evm_alias(evm_address),
+            AccountId::Solana(solana_address) => {
+                account_internal_id_by_solana_alias(solana_address)
+            }
         }
         .is_some()
     }
@@ -461,6 +522,16 @@ mod account_management {
             );
         });
 
+        account.solana_address.map(|solana_address| {
+            if account_exists(&solana_address.clone().into()) {
+                panic!("Account alias already exists"); // TODO: handle error
+            }
+            system_env::set_storage(
+                format!("accounts_aliases.solana.{}", solana_address),
+                account.internal_id,
+            );
+        });
+
         {
             if account_exists(&account.evm_address.clone().into()) {
                 panic!("Account alias already exists"); // TODO: handle error
@@ -480,6 +551,11 @@ mod account_management {
     fn account_internal_id_by_evm_alias(evm_address: EvmAddress) -> Option<u128> {
         let address = evm_address.to_string().to_lowercase();
         system_env::get_storage(format!("accounts_aliases.evm.{}", address))
+    }
+
+    fn account_internal_id_by_solana_alias(solana_address: SolanaAddress) -> Option<u128> {
+        let address = solana_address.to_string();
+        system_env::get_storage(format!("accounts_aliases.solana.{}", address))
     }
 
     /// Updates existing account in the system

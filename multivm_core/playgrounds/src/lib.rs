@@ -155,34 +155,41 @@ impl NodeHelper {
     pub fn create_contract(
         &mut self,
         multivm_contract_id: &MultiVmAccountId,
+        contract_type: String,
         code: Vec<u8>,
     ) -> (Digest, Digest) {
         (
             self.create_account(multivm_contract_id),
-            self.deploy_contract(multivm_contract_id, code),
+            self.deploy_contract(multivm_contract_id, contract_type, code),
         )
     }
 
     pub fn deploy_contract(
         &mut self,
         multivm_contract_id: &MultiVmAccountId,
+        contract_type: String,
         code: Vec<u8>,
     ) -> Digest {
         let key = self.keys.get(&multivm_contract_id.clone().into()).unwrap();
-        self.deploy_contract_with_key(multivm_contract_id, code, key.clone())
+        self.deploy_contract_with_key(multivm_contract_id, contract_type, code, key.clone())
     }
 
     pub fn deploy_contract_with_key(
         &mut self,
         multivm_contract_id: &MultiVmAccountId,
+        contract_type: String,
         code: Vec<u8>,
         key: SigningKey,
     ) -> Digest {
         let latest_block = self.node.latest_block();
         self.keys
             .insert(multivm_contract_id.clone().into(), key.clone());
-        let (tx, attachs) =
-            deploy_contract_tx(&latest_block, multivm_contract_id.clone().into(), code);
+        let (tx, attachs) = deploy_contract_tx(
+            &latest_block,
+            multivm_contract_id.clone().into(),
+            contract_type,
+            code,
+        );
         let tx_hash = tx.hash();
         let tx = SignedTransaction::new_with_attachments(tx, &key, attachs);
 
@@ -273,11 +280,13 @@ fn create_account_tx(
 fn deploy_contract_tx(
     latest_block: &Block,
     account_id: AccountId,
+    contract_type: String,
     code: Vec<u8>,
 ) -> (Transaction, Attachments) {
     #[derive(BorshDeserialize, BorshSerialize)]
     struct ContractDeploymentRequest {
         pub image_id: [u32; 8],
+        pub contract_type: String,
     }
     let program = risc0_zkvm::Program::load_elf(&code, 0x10000000).unwrap();
     let image = risc0_zkvm::MemoryImage::new(&program, 0x400).unwrap();
@@ -286,7 +295,10 @@ fn deploy_contract_tx(
     let mut contracts_images = HashMap::new();
     contracts_images.insert(image_id.clone(), code);
 
-    let args = ContractDeploymentRequest { image_id };
+    let args = ContractDeploymentRequest {
+        image_id,
+        contract_type,
+    };
 
     let tx = multivm_primitives::TransactionBuilder::new(
         AccountId::system_meta_contract(),
