@@ -1,4 +1,6 @@
 import { network } from "hardhat";
+import { field, fixedArray, string } from "@dao-xyz/borsh";
+
 let ID = 0;
 const getID = () => ++ID;
 export const defaultGas = BigInt(300_000);
@@ -53,13 +55,21 @@ export async function get_balance(address: string) {
   ]).then((r) => BigInt(r.result).toString());
 }
 
-export async function deploy_contract(mvm: string, privateKey: string, bytecode: string) {
+export async function deploy_contract(mvm: string, contractType: String, privateKey: string, bytecode: string) {
   return await call("mvm_deployContract", [
     {
       multivm: mvm,
+      contract_type: contractType,
       private_key: privateKey,
       bytecode: bytecode,
     },
+  ]);
+}
+
+export async function solana_data(contract_address: string, storage_address: string) {
+  return await call("svm_accountData", [
+    contract_address,
+    storage_address,
   ]);
 }
 
@@ -123,6 +133,27 @@ export const PoolSchema = {
 export const GetPoolSchema = {
   option: PoolSchema,
 };
+
 export const GetPoolsSchema = {
   array: { type: PoolSchema },
+};
+
+export const SolanaContextSchema = {
+  struct: {
+    accounts: {
+      array: {
+        type: {
+          array: {
+            type: "u8",
+            len: 32,
+          },
+        }
+      },
+    },
+    instruction_data: {
+      array: {
+        type: "u8"
+      }
+    }
+  },
 };

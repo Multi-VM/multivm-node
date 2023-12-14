@@ -11,7 +11,8 @@ use jsonrpsee::server::Server;
 use jsonrpsee::RpcModule;
 use lazy_static::lazy_static;
 use multivm_primitives::{
-    AccountId, EthereumTransactionRequest, EvmAddress, MultiVmAccountId, SupportedTransaction,
+    AccountId, EthereumTransactionRequest, EvmAddress, MultiVmAccountId, SolanaAddress,
+    SupportedTransaction,
 };
 use multivm_runtime::viewer::{EvmCall, SupportedView};
 use playgrounds::NodeHelper;
@@ -232,6 +233,9 @@ impl MultivmServer {
                             info!("Response: {:#?}", result);
                             return result;
                         }
+                        SupportedTransaction::Solana(_) => {
+                            unreachable!("eth_getTransactionByHash for Solana tx!")
+                        }
                     }
                 }
             }
@@ -307,17 +311,16 @@ impl MultivmServer {
         module.register_method("mvm_deployContract", move |params, _| {
             info!("mvm_deployContract");
 
-            let obj: HashMap<String, String> = params.sequence().next().expect(INCORRECT_ARGS);
-            let bytecode: Vec<u8> = obj.get("bytecode").expect(INCORRECT_ARGS).from_0x();
-            let multivm_name = obj.get("multivm").expect(INCORRECT_ARGS);
-            let private_key: String = obj.get("private_key").expect(INCORRECT_ARGS).from_0x();
-            let sk = SigningKey::from_slice(&hex::decode(private_key).expect(INCORRECT_ARGS))
-                .expect(INCORRECT_ARGS);
-            let account_id =
-                MultiVmAccountId::try_from(multivm_name.to_string()).expect(INCORRECT_ARGS);
+            let obj: HashMap<String, String> = params.sequence().next().unwrap();
+            let bytecode: Vec<u8> = obj.get("bytecode").unwrap().from_0x();
+            let multivm_name = obj.get("multivm").unwrap();
+            let contract_type = obj.get("contract_type").unwrap().clone();
+            let private_key: String = obj.get("private_key").unwrap().from_0x();
+            let sk = SigningKey::from_slice(&hex::decode(private_key).unwrap()).unwrap();
+            let account_id = MultiVmAccountId::try_from(multivm_name.to_string()).unwrap();
 
-            let mut helper = Self::lock(&helper);
-            helper.deploy_contract_with_key(&account_id, bytecode, sk);
+            let mut helper = helper.lock().unwrap();
+            helper.deploy_contract_with_key(&account_id, contract_type, bytecode, sk);
             helper.produce_block(true);
 
             Some("0x0")
@@ -400,6 +403,26 @@ impl MultivmServer {
             info!("Response: {}", json!(account));
 
             json!(account)
+        })?;
+
+        let helper = self.helper.clone();
+        module.register_method("svm_accountData", move |params, _| {
+            info!("svm_accountData, {:#?}", params.sequence());
+
+            let mut seq = params.sequence();
+            let contract_address: String = seq.next().expect(INCORRECT_ARGS);
+            let storage_address: String = seq.next().expect(INCORRECT_ARGS);
+
+            let contract_address: SolanaAddress = contract_address.parse().unwrap();
+            let storage_address: SolanaAddress = storage_address.parse().unwrap();
+
+            let helper = Self::lock(&helper);
+            let data = helper
+                .node
+                .account_raw_storage(contract_address.into(), storage_address.to_string());
+            info!("Response: {}", json!(data));
+
+            json!(data)
         })?;
 
         for method in METHODS.iter() {

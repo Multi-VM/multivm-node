@@ -107,17 +107,19 @@ impl Viewer {
                 .expect("Loading storage for non-existent contract");
 
             match contract.executable {
-                Some(Executable::MultiVm(_)) => match self.view.clone() {
-                    SupportedView::MultiVm(view) => {
-                        let input_bytes = borsh::to_vec(&view).unwrap();
-                        (
-                            input_bytes,
-                            self.load_contract(&contract.multivm_account_id.unwrap())
-                                .unwrap(),
-                        )
+                Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => {
+                    match self.view.clone() {
+                        SupportedView::MultiVm(view) => {
+                            let input_bytes = borsh::to_vec(&view).unwrap();
+                            (
+                                input_bytes,
+                                self.load_contract(&contract.multivm_account_id.unwrap())
+                                    .unwrap(),
+                            )
+                        }
+                        _ => unreachable!("MultiVM view for non-MultiVM contract"),
                     }
-                    _ => unreachable!("Non MultiVM view for MultiVM contract"),
-                },
+                }
                 Some(Executable::Evm()) => {
                     let action = borsh::to_vec(&Action::View(
                         self.view.clone(),
@@ -186,7 +188,7 @@ impl Viewer {
                     .expect("Loading storage for non-existent contract");
 
                 let storage_location = match contract.executable {
-                    Some(Executable::MultiVm(_)) => contract
+                    Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => contract
                         .multivm_account_id
                         .expect("Contract without MultiVmAccountId")
                         .into(),

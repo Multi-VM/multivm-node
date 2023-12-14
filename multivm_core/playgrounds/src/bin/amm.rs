@@ -86,7 +86,7 @@ fn main() {
     .to_vec();
 
     for (token, ticker) in vec![(token0.clone(), "USDT"), (token1.clone(), "ETH")] {
-        helper.create_contract(&token.multivm(), token_code.clone());
+        helper.create_contract(&token.multivm(), "mvm".to_string(), token_code.clone());
         // helper.produce_block(true);
 
         helper.call_contract(
@@ -115,7 +115,7 @@ fn main() {
         "../../../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/amm"
     )
     .to_vec();
-    helper.create_contract(&amm_id, amm_code);
+    helper.create_contract(&amm_id, "mvm".to_string(), amm_code);
     // helper.produce_block(true);
 
     // let user1_id = MultiVmAccountId::try_from("user1.multivm").unwrap();

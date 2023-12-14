@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use account::Account;
+use account::{Account, Executable};
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshSerialize;
 use multivm_primitives::{
     AccountId, Block, ContractResponse, EnvironmentContext, SupportedTransaction,
 };
@@ -157,6 +157,34 @@ impl MultivmNode {
 
     pub fn contract_view(&self, view: SupportedView) -> ContractResponse {
         Viewer::new(view, self.db.clone()).view()
+    }
+
+    pub fn account_raw_storage(&self, account_id: AccountId, key: String) -> Option<Vec<u8>> {
+        let storage_location = if account_id == AccountId::system_meta_contract() {
+            AccountId::system_meta_contract()
+        } else {
+            let contract = Viewer::account_info(&account_id, self.db.clone())
+                .expect("Loading storage for non-existent contract");
+
+            match contract.executable {
+                Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => contract
+                    .multivm_account_id
+                    .expect("Contract without MultiVmAccountId")
+                    .into(),
+                Some(Executable::Evm()) => AccountId::system_meta_contract(),
+                None => unreachable!("Loading storage for non-executable account"),
+            }
+        };
+
+        let db_key = format!("committed_storage.{}.{}", storage_location, key);
+
+        let storage = self
+            .db
+            .get(db_key)
+            .expect("Failed to get storage from db")
+            .map(|v| v.to_vec());
+
+        storage
     }
 }
 
