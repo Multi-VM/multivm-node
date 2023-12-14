@@ -1,69 +1,35 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-only
+pragma solidity >=0.8.0;
 
-pragma solidity ^0.8.4;
+import {ERC20} from "./ERC20.sol";
 
-contract WMVM {
-    string public name = "Wrapped MVM";
-    string public symbol = "WMVM";
-    uint8 public decimals = 18;
+import {SafeTransferLib} from "../utils/SafeTransferLib.sol";
 
-    event Approval(address indexed src, address indexed guy, uint256 wad);
-    event Transfer(address indexed src, address indexed dst, uint256 wad);
-    event Deposit(address indexed dst, uint256 wad);
-    event Withdrawal(address indexed src, uint256 wad);
+/// @notice Minimalist and modern Wrapped Ether implementation.
+/// @author Solmate (https://github.com/transmissions11/solmate/blob/main/src/tokens/WETH.sol)
+/// @author Inspired by WETH9 (https://github.com/dapphub/ds-weth/blob/master/src/weth9.sol)
+contract WMVM is ERC20("Wrapped MVM", "WMVM", 18) {
+    using SafeTransferLib for address;
 
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
+    event Deposit(address indexed from, uint256 amount);
 
-    receive() external payable {
-        deposit();
-    }
+    event Withdrawal(address indexed to, uint256 amount);
 
-    function deposit() public payable {
-        balanceOf[msg.sender] += msg.value;
+    function deposit() public payable virtual {
+        _mint(msg.sender, msg.value);
+
         emit Deposit(msg.sender, msg.value);
     }
 
-    function withdraw(uint256 wad) public {
-        require(balanceOf[msg.sender] >= wad, "");
-        balanceOf[msg.sender] -= wad;   
-        payable(msg.sender).transfer(wad);
-        emit Withdrawal(msg.sender, wad);
+    function withdraw(uint256 amount) public virtual {
+        _burn(msg.sender, amount);
+
+        emit Withdrawal(msg.sender, amount);
+
+        msg.sender.safeTransferETH(amount);
     }
 
-    function totalSupply() public view returns (uint256) {
-        return address(this).balance;
-    }
-
-    function approve(address guy, uint256 wad) public returns (bool) {
-        allowance[msg.sender][guy] = wad;
-        emit Approval(msg.sender, guy, wad);
-        return true;
-    }
-
-    function transfer(address dst, uint256 wad) public returns (bool) {
-        return transferFrom(msg.sender, dst, wad);
-    }
-
-    function transferFrom(
-        address src,
-        address dst,
-        uint256 wad
-    ) public returns (bool) {
-        require(balanceOf[src] >= wad, "");
-
-        if (
-            src != msg.sender && allowance[src][msg.sender] != type(uint256).max
-        ) {
-            require(allowance[src][msg.sender] >= wad, "");
-            allowance[src][msg.sender] -= wad;
-        }
-
-        balanceOf[src] -= wad;
-        balanceOf[dst] += wad;
-
-        emit Transfer(src, dst, wad);
-
-        return true;
+    receive() external payable virtual {
+        deposit();
     }
 }
