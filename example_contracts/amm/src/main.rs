@@ -71,6 +71,8 @@ pub struct MultiVmExecutable {
     pub image_id: [u32; 8],
 }
 
+const ABI_BYTES: &[u8] = include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi");
+
 #[multivm_sdk_macros::contract]
 impl AmmContract {
     pub fn init() {
@@ -114,9 +116,7 @@ impl AmmContract {
     pub fn add_pool(input: AddPool) {
         let mut state = Self::load();
 
-        let abi_bytes =
-            include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi").to_vec();
-        let abi = ethabi::Contract::load(abi_bytes.as_slice()).unwrap();
+        let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
         let function = abi.function("symbol").unwrap();
         let encoded_input = function.encode_input(&vec![]).unwrap();
 
@@ -187,9 +187,7 @@ impl AmmContract {
             .unwrap()
             .unwrap();
 
-        let abi_bytes =
-            include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi").to_vec();
-        let abi = ethabi::Contract::load(abi_bytes.as_slice()).unwrap();
+        let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
         let function = abi.function("transferFrom").unwrap();
 
         let encoded_input0 = function
@@ -264,9 +262,7 @@ impl AmmContract {
             / U256::from(pool.total_shares))
         .as_u128();
 
-        let abi_bytes =
-            include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi").to_vec();
-        let abi = ethabi::Contract::load(abi_bytes.as_slice()).unwrap();
+        let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
         let function = abi.function("transfer").unwrap();
 
         let encoded_input0 = function
@@ -338,9 +334,7 @@ impl AmmContract {
             / (U256::from(reserve_in + amount_in)))
         .as_u128();
 
-        let abi_bytes =
-            include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi").to_vec();
-        let abi = ethabi::Contract::load(abi_bytes.as_slice()).unwrap();
+        let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
 
         let contract = env::contract();
         let commitment = env::cross_contract_call(

@@ -4,6 +4,8 @@ use core::panic;
 
 use account_management::{update_account, MultiVmExecutable};
 use borsh::{BorshDeserialize, BorshSerialize};
+use eth_primitive_types::U256;
+use ethers_core::types::NameOrAddress;
 use multivm_primitives::{
     AccountId, ContractCall, ContractCallContext, EnvironmentContext, EthereumTransactionRequest,
     EvmAddress, MultiVmAccountId, SignedTransaction, SupportedTransaction,
@@ -85,7 +87,7 @@ fn process_ethereum_transaction(tx: EthereumTransactionRequest, environment: Env
         method: "".to_string(),
         args: vec![],
         gas: 300_000,
-        deposit: 0,
+        deposit: tx.value.unwrap_or_default().try_into().unwrap(),
     };
     let ctx = ContractCallContext {
         contract_id: AccountId::system_meta_contract(),
@@ -104,14 +106,11 @@ fn process_ethereum_transaction(tx: EthereumTransactionRequest, environment: Env
 
     match tx.processing_flow() {
         EthereumTxFlow::Deploy(bytecode) => evm::deploy_evm_contract(caller, bytecode),
-        EthereumTxFlow::Transfer(receiver, amount) => {
-            account_management::transfer(caller, receiver.into(), amount)
-        }
         EthereumTxFlow::Call(contract_id, data) => {
             let contract = account_management::account(&contract_id.clone().into()).unwrap();
             match contract.executable {
                 Some(Executable::Evm()) => {
-                    evm::call_contract(caller.evm_address, contract_id, data, true)
+                    evm::call_contract(caller.evm_address, contract_id, data, ctx.contract_call.deposit, true)
                 }
                 Some(Executable::MultiVm(_)) => {
                     let Some(multivm_contract_id) = contract.multivm_account_id else {
@@ -132,7 +131,6 @@ fn process_ethereum_transaction(tx: EthereumTransactionRequest, environment: Env
 
 enum EthereumTxFlow {
     Deploy(Vec<u8>),
-    Transfer(EvmAddress, u128),
     Call(EvmAddress, Vec<u8>),
 }
 
@@ -144,18 +142,14 @@ impl TransactionFlow<EthereumTxFlow>
     for ethers_core::types::transaction::request::TransactionRequest
 {
     fn processing_flow(self) -> EthereumTxFlow {
-        use ethers_core::types::NameOrAddress;
-
         let receiver_id: EvmAddress = match self.to {
             None => return EthereumTxFlow::Deploy(self.data.unwrap().to_vec()),
             Some(NameOrAddress::Address(address)) => address.into(),
             _ => panic!("Not supported"),
         };
 
-        let value: u128 = self.value.unwrap().try_into().unwrap();
-
         let data = match self.data {
-            None => return EthereumTxFlow::Transfer(receiver_id, value),
+            None => vec![],
             Some(data) => data.to_vec(),
         };
 
@@ -193,7 +187,7 @@ fn evm_view_call(call: EvmCall, environment: EnvironmentContext) {
         .map(|from| eth_primitive_types::H160::from(from))
         .unwrap_or_default();
     let contract_address = eth_primitive_types::H160::from_slice(&call.to).into();
-    evm::call_contract(caller_address.into(), contract_address, call.input, false)
+    evm::call_contract(caller_address.into(), contract_address, call.input, 0, false)
 }
 
 fn evm_call(ctx: ContractCallContext) {
@@ -206,6 +200,7 @@ fn evm_call(ctx: ContractCallContext) {
         caller.evm_address,
         contract.evm_address,
         ctx.contract_call.args,
+        ctx.contract_call.deposit,
         true,
     )
 }
@@ -487,8 +482,6 @@ mod account_management {
         let mut receiver = account(&receiver_id).expect("Receiver not found");
         receiver.balance += amount;
         update_account(receiver);
-
-        system_env::commit(());
     }
 
     pub fn account_storage<T: BorshDeserialize>(account_id: &AccountId, key: String) -> Option<T> {

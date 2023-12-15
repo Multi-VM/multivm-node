@@ -52,6 +52,7 @@ pub fn call_contract(
     caller_address: EvmAddress,
     contract_address: EvmAddress,
     data: Vec<u8>,
+    value: u128,
     apply_changes: bool,
 ) {
     let config = Config::istanbul();
@@ -79,7 +80,7 @@ pub fn call_contract(
     let reason = executor.transact_call(
         caller_address.into(),
         contract_address.into(),
-        U256::zero(),
+        value.into(),
         data,
         u64::MAX,
         Vec::new(),
