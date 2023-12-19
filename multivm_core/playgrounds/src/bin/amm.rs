@@ -33,6 +33,12 @@ pub struct Token {
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
+pub struct AddPool {
+    pub token0: String,
+    pub token1: String,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
 pub struct AddLiquidity {
     pub pool_id: u128,
     pub amount0: u128,
@@ -45,7 +51,6 @@ pub struct Swap {
     pub amount0_in: u128,
     pub amount1_in: u128,
 }
-
 fn main() {
     playgrounds::install_tracing();
 
@@ -216,7 +221,10 @@ fn main() {
         &amm,
         ContractCall::new_call(
             "add_pool",
-            &(token0_address.to_string(), token1_address.to_string()),
+            &AddPool {
+                token0: token0_address.to_string(),
+                token1: token1_address.to_string(),
+            },
         ),
     );
     let block = helper.produce_block(true);

@@ -207,8 +207,6 @@ impl NodeHelper {
         )
         .build();
 
-        info!("=== {}", signer_id);
-
         let tx_hash = tx.hash();
         let tx = SignedTransaction::new(tx, self.keys.get(signer_id).unwrap());
         self.node.add_tx(SupportedTransaction::MultiVm(tx.into()));

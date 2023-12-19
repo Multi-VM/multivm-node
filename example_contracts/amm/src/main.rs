@@ -122,6 +122,7 @@ impl AmmContract {
 
         let token0_id = Self::token_id(input.token0.clone());
         let commitment0 =
+            // env::cross_contract_call(token0_id, "symbol".to_string(), 0, &());
             env::cross_contract_call_raw(token0_id, "symbol".to_string(), 0, encoded_input.clone());
         let response_bytes0: Vec<u8> = commitment0.try_deserialize_response().unwrap();
         let symbol0 = function
@@ -133,6 +134,7 @@ impl AmmContract {
 
         let token1_id = Self::token_id(input.token1.clone());
         let commitment1 =
+            // env::cross_contract_call(token1_id, "symbol".to_string(), 0, &());
             env::cross_contract_call_raw(token1_id, "symbol".to_string(), 0, encoded_input.clone());
         let response_bytes1: Vec<u8> = commitment1.try_deserialize_response().unwrap();
         let symbol1 = function
@@ -175,6 +177,33 @@ impl AmmContract {
             .expect("Pool not found")
             .clone();
 
+        let (amount0, amount1) = if pool.total_shares == 0 {
+            (input.amount0, input.amount1)
+        } else {
+            assert!(
+                (input.amount0 != 0) ^ (input.amount1 != 0),
+                "You need to specify the amount for only one token {} {}",
+                input.amount0,
+                input.amount1
+            );
+
+            if input.amount0 > 0 {
+                (
+                    input.amount0,
+                    (U256::from(input.amount0) * U256::from(pool.reserve1)
+                        / U256::from(pool.reserve0))
+                    .as_u128(),
+                )
+            } else {
+                (
+                    (U256::from(input.amount1) * U256::from(pool.reserve0)
+                        / U256::from(pool.reserve1))
+                    .as_u128(),
+                    input.amount1,
+                )
+            }
+        };
+
         let contract = env::contract();
         let commitment = env::cross_contract_call(
             AccountId::system_meta_contract(),
@@ -194,7 +223,7 @@ impl AmmContract {
             .encode_input(&vec![
                 ethabi::Token::Address(caller.evm().into()),
                 ethabi::Token::Address(contract_account.evm_address.clone().into()),
-                ethabi::Token::Uint(input.amount0.into()),
+                ethabi::Token::Uint(amount0.into()),
             ])
             .unwrap();
         let token0_id = Self::token_id(pool.token0.address.clone());
@@ -209,7 +238,7 @@ impl AmmContract {
             .encode_input(&vec![
                 ethabi::Token::Address(caller.evm().into()),
                 ethabi::Token::Address(contract_account.evm_address.clone().into()),
-                ethabi::Token::Uint(input.amount1.into()),
+                ethabi::Token::Uint(amount1.into()),
             ])
             .unwrap();
         let token1_id = Self::token_id(pool.token1.address.clone());
@@ -221,21 +250,15 @@ impl AmmContract {
         );
 
         let shares = if pool.total_shares == 0 {
-            (input.amount0 * input.amount1).sqrt()
+            (amount0 * amount1).sqrt()
         } else {
-            min(
-                (U256::from(input.amount0) * U256::from(pool.total_shares)
-                    / U256::from(pool.reserve0))
-                .as_u128(),
-                (U256::from(input.amount1) * U256::from(pool.total_shares)
-                    / U256::from(pool.reserve1))
-                .as_u128(),
-            )
+            (U256::from(amount0) * U256::from(pool.total_shares) / U256::from(pool.reserve0))
+                .as_u128()
         };
 
         pool.total_shares += shares;
-        pool.reserve0 += input.amount0;
-        pool.reserve1 += input.amount1;
+        pool.reserve0 += amount0;
+        pool.reserve1 += amount1;
 
         let user_shares = state.shares.entry(caller).or_insert(HashMap::new());
         let user_pool_shares = user_shares.entry(pool.id).or_insert(0);

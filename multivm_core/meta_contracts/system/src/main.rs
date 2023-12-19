@@ -290,6 +290,7 @@ fn transfer(context: ContractCallContext) {
     let (receiver, amount): (AccountId, u128) = context.contract_call.try_deserialize_args().unwrap();
     let sender = account_management::account(&context.sender_id).unwrap();
     account_management::transfer(sender, receiver, amount);
+    system_env::commit(())
 }
 
 fn deploy_multivm_contract(call: ContractCall) {

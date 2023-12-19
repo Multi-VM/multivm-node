@@ -251,7 +251,7 @@ impl MultivmServer {
             info!(
                 "eth_sendRawTransaction {:#?}",
                 if params_str.len() > 100 {
-                    "<params too long>"
+                    "<params too long to log>"
                 } else {
                     params_str.as_str()
                 }
