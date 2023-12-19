@@ -345,7 +345,7 @@ impl MultivmServer {
 
             let call = seq.next().expect(INCORRECT_ARGS);
             let helper = Self::lock(&helper);
-            let resp = helper.view(&contract_id.into(), call);
+            let resp = borsh::to_vec(&helper.view(&contract_id.into(), call)).unwrap();
             info!("Response: {:#?}", resp.to_0x());
 
             resp.to_0x()
@@ -368,8 +368,7 @@ impl MultivmServer {
             });
             let helper = Self::lock(&helper);
             let result = helper.node.contract_view(view);
-            let deserialized: Vec<u8> =
-                BorshDeserialize::deserialize(&mut result.as_slice()).unwrap();
+            let deserialized: Vec<u8> = borsh::to_vec(&result).unwrap();
             info!("Response: {:#?}", deserialized.to_0x());
             deserialized.to_0x()
         })?;

@@ -245,6 +245,8 @@ pub type Digest = [u8; 32];
 
 pub type StorageKey = String;
 
+pub type ContractResponse = Result<Vec<u8>, ContractError>;
+
 /// Outcome of a contract call.
 #[derive(
     Serialize,
@@ -258,9 +260,10 @@ pub type StorageKey = String;
     PartialOrd,
     Eq,
 )]
+
 pub struct Commitment {
     pub call_hash: Digest,
-    pub response: Vec<u8>,
+    pub response: ContractResponse,
     pub cross_calls_hashes: Vec<(Digest, Digest)>, // hashes of cross-calls (call, commitment)
     pub previous_account_root: Option<Digest>,
     pub new_account_root: Option<Digest>,
@@ -274,9 +277,27 @@ impl Commitment {
     pub fn into_bytes(&self) -> Vec<u8> {
         borsh::to_vec(&self).expect("Expected to serialize")
     }
+}
 
-    pub fn try_deserialize_response<T: BorshDeserialize>(&self) -> std::io::Result<T> {
-        borsh::BorshDeserialize::deserialize(&mut self.response.as_slice())
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
+)]
+pub struct ContractError {
+    message: String,
+}
+
+impl ContractError {
+    pub fn new(message: String) -> Self {
+        Self { message }
     }
 }
 
@@ -574,7 +595,7 @@ pub struct Block {
     pub new_global_root: Digest,
     pub timestamp: u64,
     pub txs: Vec<SupportedTransaction>,
-    pub call_outputs: HashMap<Digest, Vec<u8>>,
+    pub call_outputs: HashMap<Digest, ContractResponse>,
     // pub execution_outcomes: HashMap<Digest, ExecutionOutcome>,
     // pub sessions: HashMap<Digest, String>, // TODO: replace json to struct
 }

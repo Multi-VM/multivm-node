@@ -1,7 +1,7 @@
 use multivm_primitives::Commitment;
 
 pub struct ExecutionOutcome {
-    pub session: risc0_zkvm::Session,
+    pub session_info: risc0_zkvm::SessionInfo,
     pub commitment: Commitment,
     pub gas_used: u64,
     pub cross_calls_outcomes: Vec<ExecutionOutcome>,
@@ -9,14 +9,14 @@ pub struct ExecutionOutcome {
 
 impl ExecutionOutcome {
     pub fn new(
-        session: risc0_zkvm::Session,
+        session_info: risc0_zkvm::SessionInfo,
         gas_used: u64,
         cross_calls_outcomes: Vec<ExecutionOutcome>,
     ) -> Self {
-        let commitment =
-            Commitment::try_from_bytes(session.journal.clone()).expect("Corrupted journal");
+        let commitment = Commitment::try_from_bytes(session_info.journal.bytes.clone())
+            .expect("Corrupted journal");
         Self {
-            session,
+            session_info,
             commitment,
             gas_used,
             cross_calls_outcomes,
@@ -30,9 +30,8 @@ impl ExecutionOutcome {
             .map(|outcome| outcome.prove_all())
             .collect();
 
-        let receipt = self.session.prove().expect("Failed to prove");
         ProvedExecutionOutcome::new(
-            receipt,
+            (),
             self.commitment.clone(),
             self.gas_used,
             cross_calls_outcomes,
@@ -41,7 +40,7 @@ impl ExecutionOutcome {
 }
 
 pub struct ProvedExecutionOutcome {
-    pub receipt: risc0_zkvm::Receipt,
+    pub receipt: (),
     pub commitment: Commitment,
     pub gas_used: u64,
     pub cross_calls_outcomes: Vec<ProvedExecutionOutcome>,
@@ -49,7 +48,7 @@ pub struct ProvedExecutionOutcome {
 
 impl ProvedExecutionOutcome {
     pub fn new(
-        receipt: risc0_zkvm::Receipt,
+        receipt: (), // TODO: prove session, create receipt
         commitment: Commitment,
         gas_used: u64,
         cross_calls_outcomes: Vec<ProvedExecutionOutcome>,

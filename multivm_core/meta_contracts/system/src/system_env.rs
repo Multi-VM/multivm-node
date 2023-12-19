@@ -8,12 +8,15 @@ use multivm_primitives::{
         CrossContractCallRequest, DeployContractRequest, GetStorageResponse, SetStorageRequest,
         CROSS_CONTRACT_CALL, DEPLOY_CONTRACT_CALL, GET_STORAGE_CALL, SET_STORAGE_CALL,
     },
-    AccountId, Commitment, ContractCall, ContractCallContext, Digest as HashDigest, StorageKey,
+    AccountId, Commitment, ContractCall, ContractCallContext, ContractError, Digest as HashDigest,
+    StorageKey,
 };
 
 pub fn setup_env(call: &ContractCallContext) {
     let mut env = ENV.lock().unwrap();
     *env = Some(Env::new_from_call(call));
+
+    std::panic::set_hook(Box::new(|i| abort(i.to_string())));
 }
 
 #[derive(Debug, BorshSerialize)]
@@ -88,7 +91,9 @@ impl Env {
 
         // assert_eq!(req_hash, commitment.call_hash); // TODO: fix
 
-        let output_hash = HashImpl::hash_bytes(&commitment.response)
+        let response_bytes = borsh::to_vec(&commitment.response).expect("Expected to serialize");
+
+        let output_hash = HashImpl::hash_bytes(&response_bytes)
             .to_owned()
             .as_bytes()
             .try_into()
@@ -199,7 +204,7 @@ impl Env {
             });
 
         let commitment = Commitment {
-            response,
+            response: Ok(response),
             call_hash: call_hash,
             cross_calls_hashes: cross_calls_hashes,
             previous_account_root: Default::default(),
@@ -208,7 +213,36 @@ impl Env {
 
         risc0_zkvm::guest::env::commit_slice(
             &borsh::to_vec(&commitment).expect("Expected to serialize"),
-        )
+        );
+
+        risc0_zkvm::guest::env::pause(); // TODO: replace to exit
+    }
+
+    pub fn abort(self, message: String) {
+        let Env {
+            signer_id: _,
+            caller_id: _,
+            contract_id: _,
+            gas: _,
+            call_hash,
+            initial_storage_hashes: _, // TODO: fix  storage
+            storage_cache: _,
+            cross_calls_hashes,
+        } = self;
+
+        let commitment = Commitment {
+            response: Err(ContractError::new(message)),
+            call_hash: call_hash,
+            cross_calls_hashes: cross_calls_hashes,
+            previous_account_root: Default::default(),
+            new_account_root: Default::default(),
+        };
+
+        risc0_zkvm::guest::env::commit_slice(
+            &borsh::to_vec(&commitment).expect("Expected to serialize"),
+        );
+
+        risc0_zkvm::guest::env::pause(); // TODO: replace to exit
     }
 }
 
@@ -256,6 +290,10 @@ pub fn commit<T: borsh::BorshSerialize>(output: T) {
     ENV.lock().unwrap().take().unwrap().commit(output)
 }
 
+pub fn abort(message: String) {
+    ENV.lock().unwrap().take().unwrap().abort(message)
+}
+
 pub fn deploy_contract(account_id: AccountId, image_id: [u32; 8]) {
     ENV.lock()
         .unwrap()
@@ -263,32 +301,3 @@ pub fn deploy_contract(account_id: AccountId, image_id: [u32; 8]) {
         .unwrap()
         .deploy_contract(account_id, image_id)
 }
-
-// /// Get EVM address by AccountId
-// pub fn get_evm_address(account_id: AccountId) -> eth_primitive_types::H160 {
-//     let mut hardcoded_mappings = std::collections::HashMap::new();
-//     hardcoded_mappings.insert(
-//         AccountId::from(AccountId::from("alice.multivm")),
-//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000001").unwrap(),
-//     );
-//     hardcoded_mappings.insert(
-//         AccountId::from(AccountId::from("bob.multivm")),
-//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000002").unwrap(),
-//     );
-//     hardcoded_mappings.insert(
-//         AccountId::from(AccountId::from("charlie.multivm")),
-//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000003").unwrap(),
-//     );
-//     hardcoded_mappings.insert(
-//         AccountId::from(AccountId::from("eve.multivm")),
-//         eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000004").unwrap(),
-//     );
-
-//     hardcoded_mappings.get(&account_id).unwrap().clone()
-
-//     // ENV.lock()
-//     //     .unwrap()
-//     //     .as_ref()
-//     //     .unwrap()
-//     //     .get_evm_address(account_id)
-// }

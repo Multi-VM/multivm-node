@@ -1,10 +1,10 @@
 #![no_main]
 
 use core::panic;
+use std::io::Read;
 
 use account_management::{update_account, MultiVmExecutable};
 use borsh::{BorshDeserialize, BorshSerialize};
-use eth_primitive_types::U256;
 use ethers_core::types::NameOrAddress;
 use multivm_primitives::{
     AccountId, ContractCall, ContractCallContext, EnvironmentContext, EthereumTransactionRequest,
@@ -53,7 +53,10 @@ enum Action {
 risc0_zkvm::entry!(entrypoint);
 
 fn entrypoint() {
-    let mut bytes: Vec<u8> = risc0_zkvm::guest::env::read();
+    let mut bytes = Vec::<u8>::new();
+    risc0_zkvm::guest::env::stdin()
+        .read_to_end(&mut bytes)
+        .unwrap();
 
     let action: Action = BorshDeserialize::try_from_slice(&mut bytes).expect("Corrupted action");
 
@@ -109,9 +112,13 @@ fn process_ethereum_transaction(tx: EthereumTransactionRequest, environment: Env
         EthereumTxFlow::Call(contract_id, data) => {
             let contract = account_management::account(&contract_id.clone().into()).unwrap();
             match contract.executable {
-                Some(Executable::Evm()) => {
-                    evm::call_contract(caller.evm_address, contract_id, data, ctx.contract_call.deposit, true)
-                }
+                Some(Executable::Evm()) => evm::call_contract(
+                    caller.evm_address,
+                    contract_id,
+                    data,
+                    ctx.contract_call.deposit,
+                    true,
+                ),
                 Some(Executable::MultiVm(_)) => {
                     let Some(multivm_contract_id) = contract.multivm_account_id else {
                         panic!("Contract is MultiVM executable but has no multivm account");
@@ -187,7 +194,13 @@ fn evm_view_call(call: EvmCall, environment: EnvironmentContext) {
         .map(|from| eth_primitive_types::H160::from(from))
         .unwrap_or_default();
     let contract_address = eth_primitive_types::H160::from_slice(&call.to).into();
-    evm::call_contract(caller_address.into(), contract_address, call.input, 0, false)
+    evm::call_contract(
+        caller_address.into(),
+        contract_address,
+        call.input,
+        0,
+        false,
+    )
 }
 
 fn evm_call(ctx: ContractCallContext) {
@@ -287,7 +300,8 @@ fn account_info(context: ContractCallContext) {
 }
 
 fn transfer(context: ContractCallContext) {
-    let (receiver, amount): (AccountId, u128) = context.contract_call.try_deserialize_args().unwrap();
+    let (receiver, amount): (AccountId, u128) =
+        context.contract_call.try_deserialize_args().unwrap();
     let sender = account_management::account(&context.sender_id).unwrap();
     account_management::transfer(sender, receiver, amount);
 }

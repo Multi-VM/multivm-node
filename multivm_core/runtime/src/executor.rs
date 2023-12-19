@@ -35,7 +35,7 @@ impl Executor {
         }
     }
 
-    pub fn execute(self) -> ExecutionOutcome {
+    pub fn execute(self) -> Result<ExecutionOutcome> {
         let contract_id = self.context.contract_id.clone();
         let (call_bytes, elf) = if contract_id != AccountId::system_meta_contract() {
             let contract = Viewer::account_info(&contract_id, self.db.clone())
@@ -67,8 +67,8 @@ impl Executor {
         };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
-            .add_input(&risc0_zkvm::serde::to_vec(&call_bytes).unwrap())
-            .session_limit(Some(usize::MAX))
+            .write_slice(&call_bytes)
+            .session_limit(Some(u64::MAX))
             .io_callback(CROSS_CONTRACT_CALL, self.callback_on_cross_contract_call())
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
             .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
@@ -80,11 +80,15 @@ impl Executor {
 
         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY).unwrap();
         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
-        let mut exec = risc0_zkvm::Executor::new(env, image).unwrap();
+        let exec = risc0_zkvm::default_executor();
 
-        let session = exec.run().unwrap();
+        let session = exec.execute(env, image).unwrap();
 
-        ExecutionOutcome::new(session, 0, self.cross_calls_outcomes.take())
+        Ok(ExecutionOutcome::new(
+            session,
+            0,
+            self.cross_calls_outcomes.take(),
+        ))
     }
 
     fn load_contract(&self, contract_id: AccountId) -> Result<Vec<u8>> {
@@ -120,7 +124,9 @@ impl Executor {
 
             debug!(call_context=?call_context, "Executing cross contract call");
 
-            let outcome = Executor::new(call_context, self.db.clone()).execute();
+            let outcome = Executor::new(call_context, self.db.clone())
+                .execute()
+                .context("Cross Contract Call failed")?;
 
             let commitment = borsh::to_vec(&outcome.commitment).unwrap();
 
