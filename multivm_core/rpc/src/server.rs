@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
-use borsh::BorshDeserialize;
 use eth_primitive_types::H160;
 use ethers_core::k256::ecdsa::SigningKey;
 use hyper::Method;
@@ -18,7 +17,7 @@ use multivm_runtime::viewer::{EvmCall, SupportedView};
 use playgrounds::NodeHelper;
 use serde_json::json;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::utils::{EthBlockOutput, EthTransaction, EthTransactionReceipt, From0x, To0x};
 
@@ -345,10 +344,18 @@ impl MultivmServer {
 
             let call = seq.next().expect(INCORRECT_ARGS);
             let helper = Self::lock(&helper);
-            let resp = borsh::to_vec(&helper.view(&contract_id.into(), call)).unwrap();
-            info!("Response: {:#?}", resp.to_0x());
 
-            resp.to_0x()
+            let result = helper.view(&contract_id.into(), call);
+            match result {
+                Ok(data) => {
+                    info!("Response: {:#?}", data.to_0x());
+                    data.to_0x()
+                }
+                Err(error) => {
+                    error!("Error in mvm_viewCall: {:#?}", error);
+                    0u128.to_0x()
+                }
+            }
         })?;
 
         let helper = self.helper.clone();
@@ -368,9 +375,17 @@ impl MultivmServer {
             });
             let helper = Self::lock(&helper);
             let result = helper.node.contract_view(view);
-            let deserialized: Vec<u8> = borsh::to_vec(&result).unwrap();
-            info!("Response: {:#?}", deserialized.to_0x());
-            deserialized.to_0x()
+            match result {
+                Ok(data) => {
+                    let response: Vec<u8> = borsh::from_slice(&data).unwrap();
+                    info!("Response: {:#?}", response.to_0x());
+                    response.to_0x()
+                }
+                Err(error) => {
+                    error!("Error in eth_call: {:#?}", error);
+                    0u128.to_0x()
+                }
+            }
         })?;
 
         let helper = self.helper.clone();
