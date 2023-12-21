@@ -180,14 +180,14 @@ fn main() {
         ContractCall::new_call("account_info", &nikita),
     );
     let nikita_account: Option<Account> =
-        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+        BorshDeserialize::deserialize(&mut output.unwrap().as_slice()).unwrap();
 
     let output = helper.view(
         &AccountId::system_meta_contract(),
         ContractCall::new_call("account_info", &alice),
     );
     let alice_account: Option<Account> =
-        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+        BorshDeserialize::deserialize(&mut output.unwrap().as_slice()).unwrap();
 
     info!("{:#?}, {:#?}", nikita_account, alice_account);
 
@@ -203,14 +203,14 @@ fn main() {
         ContractCall::new_call("account_info", &nikita),
     );
     let nikita_account: Option<Account> =
-        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+        BorshDeserialize::deserialize(&mut output.unwrap().as_slice()).unwrap();
 
     let output = helper.view(
         &AccountId::system_meta_contract(),
         ContractCall::new_call("account_info", &alice),
     );
     let alice_account: Option<Account> =
-        BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+        BorshDeserialize::deserialize(&mut output.unwrap().as_slice()).unwrap();
 
     info!("{:#?}, {:#?}", nikita_account, alice_account);
 
@@ -228,8 +228,8 @@ fn main() {
         ),
     );
     let block = helper.produce_block(true);
-    let output = block.call_outputs.get(&hash).unwrap();
-    let pool_id: u128 = BorshDeserialize::deserialize(&mut output.as_slice()).unwrap();
+    let output = block.call_outputs.get(&hash).unwrap().clone();
+    let pool_id: u128 = borsh::from_slice(&output.unwrap()).unwrap();
 
     info!("======= created pool: {}", pool_id);
 
@@ -246,8 +246,8 @@ fn main() {
         ),
     );
     let block = helper.produce_block(true);
-    let shares_bytes = block.call_outputs.get(&tx_hash).unwrap();
-    let shares: u128 = BorshDeserialize::deserialize(&mut shares_bytes.as_slice()).unwrap();
+    let shares_bytes = block.call_outputs.get(&tx_hash).unwrap().clone();
+    let shares: u128 = borsh::from_slice(&shares_bytes.unwrap()).unwrap();
 
     info!("======= added shares: {}", shares);
 
@@ -262,7 +262,8 @@ fn main() {
     });
 
     let bytes = helper.node.contract_view(view);
-    let shares: HashMap<u128, u128> = BorshDeserialize::deserialize(&mut bytes.as_slice()).unwrap();
+    let shares: HashMap<u128, u128> =
+        BorshDeserialize::deserialize(&mut bytes.unwrap().as_slice()).unwrap();
     info!("==== shares: {:#?}", shares);
 
     info!("======= added liquidity");
@@ -279,7 +280,8 @@ fn main() {
         });
 
         let balance_bytes = helper.node.contract_view(view);
-        let balance: u128 = BorshDeserialize::deserialize(&mut balance_bytes.as_slice()).unwrap();
+        let balance: u128 =
+            BorshDeserialize::deserialize(&mut balance_bytes.unwrap().as_slice()).unwrap();
         info!(
             "======== Balance of {:#?} is now {}",
             token.multivm(),
@@ -298,7 +300,8 @@ fn main() {
     });
 
     let bytes = helper.node.contract_view(view);
-    let shares: HashMap<u128, u128> = BorshDeserialize::deserialize(&mut bytes.as_slice()).unwrap();
+    let shares: HashMap<u128, u128> =
+        BorshDeserialize::deserialize(&mut bytes.unwrap().as_slice()).unwrap();
     info!("==== shares: {:#?}", shares);
 
     helper.call_contract(
@@ -323,8 +326,8 @@ fn main() {
         ContractCall::new_call("remove_liquidity", &pool_id),
     );
     let block = helper.produce_block(true);
-    let shares_bytes = block.call_outputs.get(&tx_hash).unwrap();
-    let shares: u128 = BorshDeserialize::deserialize(&mut shares_bytes.as_slice()).unwrap();
+    let shares_bytes = block.call_outputs.get(&tx_hash).unwrap().clone();
+    let shares: u128 = borsh::from_slice(&shares_bytes.unwrap()).unwrap();
 
     info!("======= removed shares: {}", shares);
 
@@ -340,7 +343,8 @@ fn main() {
         });
 
         let balance_bytes = helper.node.contract_view(view);
-        let balance: u128 = BorshDeserialize::deserialize(&mut balance_bytes.as_slice()).unwrap();
+        let balance: u128 =
+            BorshDeserialize::deserialize(&mut balance_bytes.unwrap().as_slice()).unwrap();
         info!(
             "======== Balance of {:#?} after swap {}",
             token.multivm(),
@@ -361,7 +365,8 @@ fn main() {
     });
 
     let pools_bytes = helper.node.contract_view(view);
-    let pools: Vec<Pool> = BorshDeserialize::deserialize(&mut pools_bytes.as_slice()).unwrap();
+    let pools: Vec<Pool> =
+        BorshDeserialize::deserialize(&mut pools_bytes.unwrap().as_slice()).unwrap();
     info!("======== pools: {:#?}", pools);
 
     info!("======= fetching one pool");
@@ -380,6 +385,7 @@ fn main() {
     });
     info!("======== loading pool");
     let pool_bytes = helper.node.contract_view(view);
-    let pool: Option<Pool> = BorshDeserialize::deserialize(&mut pool_bytes.as_slice()).unwrap();
+    let pool: Option<Pool> =
+        BorshDeserialize::deserialize(&mut pool_bytes.unwrap().as_slice()).unwrap();
     info!("======== pool: {:#?}", pool);
 }

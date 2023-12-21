@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use tracing::{debug, info, span, Level};
+use tracing::{debug, span, Level};
 
 use multivm_primitives::{
     syscalls::{GetStorageResponse, GET_STORAGE_CALL, SET_STORAGE_CALL},
-    AccountId, Commitment, ContractCall, ContractCallContext, EnvironmentContext, EvmAddress,
-    MultiVmAccountId, SupportedTransaction,
+    AccountId, Commitment, ContractCall, ContractCallContext, ContractResponse, EnvironmentContext,
+    EvmAddress, MultiVmAccountId, SupportedTransaction,
 };
 
 use crate::account::{Account, Executable};
@@ -52,7 +52,8 @@ impl Viewer {
     }
 
     pub fn account_info(account_id: &AccountId, db: sled::Db) -> Option<Account> {
-        let bytes = Viewer::view_system_meta_contract("account_info".to_string(), account_id, db);
+        let bytes =
+            Viewer::view_system_meta_contract("account_info".to_string(), account_id, db).unwrap();
         borsh::from_slice(&bytes).unwrap()
     }
 
@@ -60,7 +61,7 @@ impl Viewer {
         method: String,
         args: &T,
         db: sled::Db,
-    ) -> Vec<u8> {
+    ) -> ContractResponse {
         let context = ContractCallContext {
             contract_id: AccountId::system_meta_contract(),
             contract_call: ContractCall::new(method, args, 100_000_000, 0),
@@ -73,8 +74,8 @@ impl Viewer {
         let input_bytes = borsh::to_vec(&action).unwrap();
 
         let env = risc0_zkvm::ExecutorEnv::builder()
-            .add_input(&risc0_zkvm::serde::to_vec(&input_bytes).unwrap())
-            .session_limit(Some(usize::MAX))
+            .write_slice(&input_bytes)
+            .session_limit(Some(u64::MAX))
             .io_callback(GET_STORAGE_CALL, callback_on_system_get_storage(db.clone()))
             .stdout(ContractLogger::new(AccountId::system_meta_contract()))
             .build()
@@ -86,16 +87,16 @@ impl Viewer {
         )
         .unwrap();
         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
-        let mut exec = risc0_zkvm::Executor::new(env, image).unwrap();
+        let exec = risc0_zkvm::default_executor();
 
-        let session = exec.run().unwrap();
+        let session = exec.execute(env, image).unwrap();
 
-        Commitment::try_from_bytes(session.journal.clone())
+        Commitment::try_from_bytes(session.journal.bytes.clone())
             .expect("Corrupted journal")
             .response
     }
 
-    pub fn view(self) -> Vec<u8> {
+    pub fn view(self) -> ContractResponse {
         let contract_id = self.view.contract_id();
 
         debug!(contract_id=?contract_id, "Viewing contract");
@@ -139,8 +140,8 @@ impl Viewer {
         };
 
         let env = risc0_zkvm::ExecutorEnv::builder()
-            .add_input(&risc0_zkvm::serde::to_vec(&input_bytes).unwrap())
-            .session_limit(Some(usize::MAX))
+            .write_slice(&input_bytes)
+            .session_limit(Some(u64::MAX))
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
             .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
             .stdout(ContractLogger::new(AccountId::system_meta_contract()))
@@ -149,11 +150,11 @@ impl Viewer {
 
         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY).unwrap();
         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
-        let mut exec = risc0_zkvm::Executor::new(env, image).unwrap();
+        let exec = risc0_zkvm::default_executor();
 
-        let session = exec.run().unwrap();
+        let session = exec.execute(env, image).unwrap();
 
-        Commitment::try_from_bytes(session.journal.clone())
+        Commitment::try_from_bytes(session.journal.bytes.clone())
             .expect("Corrupted journal")
             .response
     }

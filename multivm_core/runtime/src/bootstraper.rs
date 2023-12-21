@@ -1,3 +1,4 @@
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
 use tracing::{debug, span, Level};
@@ -73,8 +74,8 @@ impl Bootstraper {
         let action_bytes = borsh::to_vec(&action).unwrap();
 
         let env = risc0_zkvm::ExecutorEnv::builder()
-            .add_input(&risc0_zkvm::serde::to_vec(&action_bytes).unwrap())
-            .session_limit(Some(usize::MAX))
+            .write_slice(&action_bytes)
+            .session_limit(Some(u64::MAX))
             .io_callback(CROSS_CONTRACT_CALL, self.callback_on_cross_contract_call())
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
             .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
@@ -87,9 +88,9 @@ impl Bootstraper {
 
         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY).unwrap();
         let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
-        let mut exec = risc0_zkvm::Executor::new(env, image).unwrap();
+        let exec = risc0_zkvm::default_executor();
 
-        let session = exec.run().unwrap();
+        let session = exec.execute(env, image).unwrap();
 
         ExecutionOutcome::new(session, 0, self.cross_calls_outcomes.take())
     }
@@ -150,7 +151,9 @@ impl Bootstraper {
                 environment: self.environment.clone(),
             };
 
-            let outcome = Executor::new(call_context, self.db.clone()).execute();
+            let outcome = Executor::new(call_context, self.db.clone())
+                .execute()
+                .context("Cross Contract Call failed")?;
 
             let commitment = borsh::to_vec(&outcome.commitment).unwrap();
 

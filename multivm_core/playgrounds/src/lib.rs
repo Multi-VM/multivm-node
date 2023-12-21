@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{
     k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
-    Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction,
+    ContractResponse, Digest, EnvironmentContext, EvmAddress, MultiVmAccountId, SignedTransaction,
     SupportedTransaction, Transaction,
 };
 use multivm_runtime::{account::Account, MultivmNode};
@@ -219,15 +219,11 @@ impl NodeHelper {
     }
 
     pub fn account(&self, account_id: &AccountId) -> Option<Account> {
-        let bytes = self
-            .node
-            .system_view("account_info".to_string(), account_id);
-
-        borsh::from_slice(&bytes).unwrap()
+        self.node.account_info(account_id)
     }
 
-    pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> Vec<u8> {
-        let bytes = self
+    pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> ContractResponse {
+        let response = self
             .node
             .contract_view(multivm_runtime::viewer::SupportedView::MultiVm(
                 ContractCallContext {
@@ -239,7 +235,7 @@ impl NodeHelper {
                 },
             ));
 
-        bytes
+        response
     }
 }
 

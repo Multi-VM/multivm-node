@@ -41,7 +41,7 @@ fn main() {
 }
 
 fn account_creation_1(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     let alice_id = MultiVmAccountId::try_from("alice.multivm").unwrap();
     helper.create_account(&alice_id);
 
@@ -53,7 +53,7 @@ fn account_creation_1(skip_proof: bool) -> Duration {
 }
 
 fn account_creation_5(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     for i in 0..5 {
         helper.create_account(
             &MultiVmAccountId::try_from(format!("{}.multivm", i))
@@ -68,7 +68,7 @@ fn account_creation_5(skip_proof: bool) -> Duration {
 }
 
 fn account_creation_20(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     for i in 0..20 {
         helper.create_account(
             &MultiVmAccountId::try_from(format!("{}.multivm", i))
@@ -83,7 +83,7 @@ fn account_creation_20(skip_proof: bool) -> Duration {
 }
 
 fn fibonacci_creation(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     let code =  include_bytes!("../../../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/fibonacci_contract").to_vec();
     helper.create_contract(
         &MultiVmAccountId::try_from("fibonacci.multivm")
@@ -98,7 +98,7 @@ fn fibonacci_creation(skip_proof: bool) -> Duration {
 }
 
 fn fibonacci_full_flow(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     let fibonacci_id = MultiVmAccountId::try_from("fibonacci.multivm")
         .unwrap()
         .into();
@@ -122,7 +122,7 @@ fn fibonacci_full_flow(skip_proof: bool) -> Duration {
 }
 
 fn token_contract_transfer_1(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     let token_id = MultiVmAccountId::try_from("token.multivm").unwrap();
     let alice_id = MultiVmAccountId::try_from("alice.multivm").unwrap();
     let bob_id = MultiVmAccountId::try_from("bob.multivm").unwrap();
@@ -157,7 +157,7 @@ fn token_contract_transfer_1(skip_proof: bool) -> Duration {
 }
 
 fn token_contract_transfer_10(skip_proof: bool) -> Duration {
-    let mut helper = NodeHelper::new_temp();
+    let mut helper = NodeHelper::new(None);
     let token_id = MultiVmAccountId::try_from("token.multivm").unwrap();
     let alice_id = MultiVmAccountId::try_from("alice.multivm").unwrap();
     let bob_id = MultiVmAccountId::try_from("bob.multivm").unwrap();

@@ -122,9 +122,8 @@ impl AmmContract {
 
         let token0_id = Self::token_id(input.token0.clone());
         let commitment0 =
-            // env::cross_contract_call(token0_id, "symbol".to_string(), 0, &());
             env::cross_contract_call_raw(token0_id, "symbol".to_string(), 0, encoded_input.clone());
-        let response_bytes0: Vec<u8> = commitment0.try_deserialize_response().unwrap();
+        let response_bytes0: Vec<u8> = borsh::from_slice(&commitment0.response.unwrap()).unwrap();
         let symbol0 = function
             .decode_output(response_bytes0.as_slice())
             .unwrap()
@@ -134,9 +133,8 @@ impl AmmContract {
 
         let token1_id = Self::token_id(input.token1.clone());
         let commitment1 =
-            // env::cross_contract_call(token1_id, "symbol".to_string(), 0, &());
             env::cross_contract_call_raw(token1_id, "symbol".to_string(), 0, encoded_input.clone());
-        let response_bytes1: Vec<u8> = commitment1.try_deserialize_response().unwrap();
+        let response_bytes1: Vec<u8> = borsh::from_slice(&commitment1.response.unwrap()).unwrap();
         let symbol1 = function
             .decode_output(response_bytes1.as_slice())
             .unwrap()
@@ -211,10 +209,9 @@ impl AmmContract {
             0,
             &contract.clone(),
         );
-        let contract_account = commitment
-            .try_deserialize_response::<Option<Account>>()
-            .unwrap()
-            .unwrap();
+
+        let contract_account: Option<Account> =
+            borsh::from_slice(&commitment.response.unwrap()).unwrap();
 
         let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
         let function = abi.function("transferFrom").unwrap();
@@ -222,32 +219,40 @@ impl AmmContract {
         let encoded_input0 = function
             .encode_input(&vec![
                 ethabi::Token::Address(caller.evm().into()),
-                ethabi::Token::Address(contract_account.evm_address.clone().into()),
+                ethabi::Token::Address(
+                    contract_account.clone().unwrap().evm_address.clone().into(),
+                ),
                 ethabi::Token::Uint(amount0.into()),
             ])
             .unwrap();
         let token0_id = Self::token_id(pool.token0.address.clone());
-        env::cross_contract_call_raw(
+        let commitment = env::cross_contract_call_raw(
             token0_id.clone(),
             "transferFrom".to_string(),
             0,
             encoded_input0.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not transfer token {}", token0_id);
+        }
 
         let encoded_input1 = function
             .encode_input(&vec![
                 ethabi::Token::Address(caller.evm().into()),
-                ethabi::Token::Address(contract_account.evm_address.clone().into()),
+                ethabi::Token::Address(contract_account.unwrap().evm_address.clone().into()),
                 ethabi::Token::Uint(amount1.into()),
             ])
             .unwrap();
         let token1_id = Self::token_id(pool.token1.address.clone());
-        env::cross_contract_call_raw(
-            token1_id,
+        let commitment = env::cross_contract_call_raw(
+            token1_id.clone(),
             "transferFrom".to_string(),
             0,
             encoded_input1.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not transfer token {}", token1_id);
+        }
 
         let shares = if pool.total_shares == 0 {
             (amount0 * amount1).sqrt()
@@ -295,12 +300,15 @@ impl AmmContract {
             ])
             .unwrap();
         let token0_id = Self::token_id(pool.token0.address.clone());
-        env::cross_contract_call_raw(
+        let commitment = env::cross_contract_call_raw(
             token0_id.clone(),
             "transfer".to_string(),
             0,
             encoded_input0.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not send token {}", token0_id);
+        }
 
         let encoded_input1 = function
             .encode_input(&vec![
@@ -309,7 +317,15 @@ impl AmmContract {
             ])
             .unwrap();
         let token1_id = Self::token_id(pool.token1.address.clone());
-        env::cross_contract_call_raw(token1_id, "transfer".to_string(), 0, encoded_input1.clone());
+        let commitment = env::cross_contract_call_raw(
+            token1_id,
+            "transfer".to_string(),
+            0,
+            encoded_input1.clone(),
+        );
+        if commitment.response.is_err() {
+            panic!("Can not send token {}", token0_id);
+        }
 
         *user_pool_shares = 0;
 
@@ -366,16 +382,15 @@ impl AmmContract {
             0,
             &contract.clone(),
         );
-        let contract_account = commitment
-            .try_deserialize_response::<Option<Account>>()
-            .unwrap()
-            .unwrap();
+
+        let contract_account: Option<Account> =
+            borsh::from_slice(&commitment.response.unwrap()).unwrap();
 
         let transfer_from_function = abi.function("transferFrom").unwrap();
         let encoded_input0 = transfer_from_function
             .encode_input(&vec![
                 ethabi::Token::Address(caller.evm().into()),
-                ethabi::Token::Address(contract_account.evm_address.clone().into()),
+                ethabi::Token::Address(contract_account.unwrap().evm_address.clone().into()),
                 ethabi::Token::Uint(amount_in.into()),
             ])
             .unwrap();

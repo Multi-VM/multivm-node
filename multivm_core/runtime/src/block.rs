@@ -62,7 +62,7 @@ impl UnprovedBlock {
                     response.clone()
                 } else {
                     let commitment =
-                        Commitment::try_from_bytes(response.clone()).unwrap();
+                        Commitment::try_from_bytes(response.clone().unwrap()).unwrap();
                     commitment.response
                 };
 
