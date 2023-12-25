@@ -1,9 +1,10 @@
 import fs from "fs";
-import { ethers, network } from "hardhat";
+import { ethers } from "hardhat";
 import { formatEther, parseEther } from "ethers";
-import { GetPoolsSchema, addLiquidityArgs, addPoolArgs, create_account, deploy_contract, initArgs, removeLiquidityArgs, swapArgs, toHexString, transactionSchema, view } from "./utils";
-import { deserialize, serialize } from "borsh";
+import { GetPoolsSchema, view } from "./utils";
+import { deserialize } from "borsh";
 import { Token, AMM } from "../typechain-types/contracts";
+import { ammContractAddLiquidity, ammContractAddPool, ammContractInit, ammContractRemoveLiquidity, ammContractSwap, createUserSafe, deployAMMContract, deployTokenContract } from "./helpers";
 
 const AMM_CONTRACT_SRC = "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/amm";
 const bytecode = fs.readFileSync(AMM_CONTRACT_SRC);
@@ -12,34 +13,24 @@ const amm = new ethers.Wallet(new ethers.SigningKey("0x" + ammPrivateKey), ether
 const owner = new ethers.Wallet(new ethers.SigningKey("0x" + "afdfd9c3d2095ef696594f6cedcae59e72dcd697e2a7521b1578140422a4f890"), ethers.provider);
 const user = new ethers.Wallet(new ethers.SigningKey("0x" + "af1a53abf88f4821840a2934f3facfc8b1827cccd7f2e331375d2faf8c1032d2"), ethers.provider);
 
+// AMM
+let ammContract: AMM;
+
+// Token related
+const tokensSupplyAmount = parseEther(String(1_000_000));
+const transferAmount = parseEther(String(1_000));
+let token1: Token;
+let token2: Token;
+let token1Address: string;
+let token2Address: string;
+
 async function main() {
-  // Variables
-  // Transactions
-  let defaultGas = BigInt(300_000);
-  let defaultDeposit = BigInt(0);
-
-  // AMM
-  let ammContract: AMM;
-
-  // Token related
-  const tokensSupplyAmount = parseEther(String(1_000_000));
-  const transferAmount = parseEther(String(1_000));
-  let token1: Token;
-  let token2: Token;
-  let token1Address: string;
-  let token2Address: string;
-
-  async function getChainMetadata() {
-    const chainId = parseInt(await network.provider.send("eth_chainId"));
-    console.log("Chain ID:", chainId);
-  }
-
   async function createAccounts() {
     // !You need to create user with this alias first
     console.log("\nCreating users...");
-    await create_account("owner.multivm", owner.address);
-    await create_account("user.multivm", user.address);
-    await create_account("amm.multivm", amm.address);
+    await createUserSafe("owner.multivm", owner.address);
+    await createUserSafe("user.multivm", user.address);
+    await createUserSafe("amm.multivm", amm.address);
     console.table([
       { name: "owner.multivm", address: owner.address },
       { name: "user.multivm", address: user.address },
@@ -49,16 +40,15 @@ async function main() {
 
   async function deployTokens() {
     console.log("\nDeploying & Approving tokens...");
-    const TOKEN_FACTORY = await ethers.getContractFactory("Token");
-    token1 = await TOKEN_FACTORY.connect(owner).deploy("Token1", "TKN1", tokensSupplyAmount);
+    token1 = await deployTokenContract({ name: "Token 1", symbol: "TKN1", supply: tokensSupplyAmount, signer: owner });
     token1Address = await token1.getAddress();
     await token1.approve(user.address, tokensSupplyAmount);
     await token1.approve(amm.address, tokensSupplyAmount);
 
-    token2 = await TOKEN_FACTORY.connect(owner).deploy("Token2", "TKN2", tokensSupplyAmount);
+    token2 = await deployTokenContract({ name: "Token 1", symbol: "TKN1", supply: tokensSupplyAmount, signer: owner });
+    token2Address = await token2.getAddress();
     await token2.approve(user.address, tokensSupplyAmount);
     await token2.approve(amm.address, tokensSupplyAmount);
-    token2Address = await token2.getAddress();
     console.log([token1Address, token2Address]);
 
     await token1.connect(user).approve(amm.address, tokensSupplyAmount);
@@ -89,116 +79,41 @@ async function main() {
 
   async function deployAMM() {
     console.log("\nDeploying AMM contract...");
-    await deploy_contract("amm.multivm", ammPrivateKey, toHexString(bytecode));
-    ammContract = await ethers.getContractAt("AMM", amm.address, amm);
+    ammContract = await deployAMMContract({ mvmAddress: "amm.multivm", privateKey: ammPrivateKey, byteCode: bytecode, address: amm.address, signer: amm });
     console.log(`AMM deployed`, await ammContract.getAddress());
   }
 
   async function ammInit() {
     console.log(`\n —— [init] send transaction...`);
-
-    // gas: 0x5208,
-    // data: Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("hex"),
-
-    const data = serialize(transactionSchema, {
-      method: "init",
-      args: serialize(initArgs, []),
-      gas: defaultGas,
-      deposit: defaultDeposit,
-    });
-
-    const initTx = await owner.sendTransaction({ to: ammContract, data: data });
-    // console.dir(initTx);
+    await ammContractInit({ contract: ammContract, signer: owner });
     console.log(` —— [init] ready!`);
   }
 
-  async function ammAddPool() {
+  async function ammAddPool(t0Address: string, t1Address: string) {
     console.log(`\n —— [add_pool] send transaction...`);
-    const data = serialize(transactionSchema, {
-      method: "add_pool",
-      args: serialize(addPoolArgs, {
-        token0: token1Address,
-        token1: token2Address,
-      }),
-      gas: defaultGas,
-      deposit: defaultDeposit,
-    });
-
-    const addPoolTx = await owner.sendTransaction({
-      to: ammContract,
-      data: data,
-    });
-
-    // console.dir(addPoolTx);
+    await ammContractAddPool({ token0: t0Address, token1: t1Address, contract: ammContract, signer: owner });
     console.log(` —— [add_pool] ready!`);
   }
 
-  async function ammAddLiquidity() {
+  async function ammAddLiquidity(poolId: number, am0: number, am1: number) {
     console.log(`\n —— [add_liquidity] send transaction...`);
-
-    const data = serialize(transactionSchema, {
-      method: "add_liquidity",
-      args: serialize(addLiquidityArgs, {
-        pool_id: BigInt(0),
-        amount0: parseEther(String(1_00)),
-        amount1: parseEther(String(20_000)),
-      }),
-      gas: defaultGas,
-      deposit: defaultDeposit,
-    });
-
-    const addLiquidityTx = await owner.sendTransaction({
-      to: ammContract,
-      data: data,
-    });
-
-    // console.dir(addLiquidityTx);
+    await ammContractAddLiquidity({ poolId: poolId, amount0: am0, amount1: am1, contract: ammContract, signer: owner });
     console.log(` —— [add_liquidity] ready!`);
   }
 
-  async function ammRemoveLiquidity() {
+  async function ammRemoveLiquidity(poolId: number) {
     console.log(`\n —— [remove_liquidity] send transaction...`);
-
-    const data = serialize(transactionSchema, {
-      method: "remove_liquidity",
-      args: serialize(removeLiquidityArgs, {
-        pool_id: BigInt(0),
-      }),
-      gas: defaultGas,
-      deposit: defaultDeposit,
-    });
-
-    const removeLiquidityTx = await owner.sendTransaction({
-      to: ammContract,
-      data: data,
-    });
-
-    // console.dir(addLiquidityTx);
+    await ammContractRemoveLiquidity({ poolId: poolId, contract: ammContract, signer: owner });
     console.log(` —— [remove_liquidity] ready!`);
   }
 
-  async function ammSwap() {
+  async function ammSwap(poolId: number, am0In: number, am1In: number) {
     console.log(`\n —— [swap] send transaction...`);
-
-    const data = serialize(transactionSchema, {
-      method: "swap",
-      args: serialize(swapArgs, {
-        pool_id: BigInt(0),
-        amount0_in: parseEther(String(1)),
-        amount1_in: BigInt(0),
-      }),
-      gas: defaultGas,
-      deposit: defaultDeposit,
-    });
-
-    const swapTx = await user.sendTransaction({
-      to: ammContract,
-      data: data,
-    });
-
-    // console.dir(swapTx);
+    //! signer = user
+    await ammContractSwap({ poolId: poolId, amount0_in: am0In, amount1_in: am1In, contract: ammContract, signer: user });
     console.log(` —— [swap] ready!`);
   }
+
   async function getPoolsMetadata(fullInfo = false) {
     console.log("\n -- [get_pools] loading...");
     const poolsRAW = await view("amm.multivm", "get_pools", []);
@@ -211,23 +126,20 @@ async function main() {
   }
 
   // ——————— Start
-  // await getChainMetadata();
   await createAccounts();
   await deployTokens();
   await transferTokens().then(async () => await getTokenMetadata());
   await deployAMM();
   await ammInit();
-  await ammAddPool().then(async () => await getPoolsMetadata(true));
-  await ammAddLiquidity()
+  await ammAddPool(token1Address, token2Address).then(async () => await getPoolsMetadata(true));
+  await ammAddLiquidity(0, 1_00, 20_000)
     .then(async () => await getTokenMetadata())
     .then(async () => await getPoolsMetadata());
 
-  return;
-
-  await ammSwap()
+  await ammSwap(0, 1, 0)
     .then(async () => await getTokenMetadata())
     .then(async () => await getPoolsMetadata());
-  await ammRemoveLiquidity()
+  await ammRemoveLiquidity(0)
     .then(async () => await getTokenMetadata())
     .then(async () => await getPoolsMetadata());
 }

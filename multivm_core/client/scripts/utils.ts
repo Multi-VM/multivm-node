@@ -1,7 +1,7 @@
-import { field, string } from "@dao-xyz/borsh";
-
 let ID = 0;
 const getID = () => ++ID;
+export const defaultGas = BigInt(300_000);
+export const defaultDeposit = BigInt(0);
 
 export async function call(method: string, params: any) {
   const response = await fetch("http://127.0.0.1:8080/", {

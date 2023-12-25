@@ -11,6 +11,7 @@
     "deploy:wrapped": "hardhat run ./scripts/deploy-wrapped.ts --network multivm",
     "deploy:wrapped:goerli": "hardhat run ./scripts/deploy-wrapped.ts --network goerli",
     "deploy:amm-rust": "hardhat run ./scripts/deploy-amm-rust.ts --network multivm",
+    "deploy:demo": "hardhat run ./scripts/deploy-demo.ts --network multivm",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -23,8 +24,8 @@
     "axios": "^1.6.0",
     "chai": "^4.3.10",
     "dotenv": "^16.3.1",
-    "ethers": "^6.9.0",
-    "hardhat": "^2.19.2",
+    "ethers": "^6.9.1",
+    "hardhat": "^2.19.3",
     "rpc-websocket-client": "^1.1.4"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import { parseEther, formatUnits } from "ethers";
-import { ethers, network } from "hardhat";
+import { ethers } from "hardhat";
+import { createUsersFromSigners, deployTokenContract } from "./helpers";
 
 // change this
 const TOKEN_NAME = "ERC20 My Token";
@@ -7,21 +8,13 @@ const TOKEN_SYMBOL = "TKN";
 const TOKEN_SUPPLY = parseEther(String(1_000_000_000));
 
 async function main() {
-  const chainId = parseInt(await network.provider.send("eth_chainId"));
-  const signers = await ethers.getSigners();
-
-  console.log("Chain ID:", chainId);
-  for (const [index, signer] of signers.entries()) {
-    console.log(`User ${index}:`, await signer.getAddress());
-  }
-
+  await createUsersFromSigners();
   console.log(`\nDeploying token...`);
-  const TOKEN_CONTRACT = await ethers.getContractFactory("Token");
-  const TOKEN = await TOKEN_CONTRACT.deploy(
-    TOKEN_NAME,
-    TOKEN_SYMBOL,
-    TOKEN_SUPPLY
-  );
+  const TOKEN = await deployTokenContract({
+    name: TOKEN_NAME,
+    symbol: TOKEN_SYMBOL,
+    supply: TOKEN_SUPPLY,
+  });
 
   const tokenName = await TOKEN.name();
   const tokenSymbol = await TOKEN.symbol();
@@ -37,6 +30,7 @@ async function main() {
   console.log(`Supply: ${formatUnits(tokenSupply, tokenDecimals)}`);
 
   console.log(`\nToken transfer to all signers...`);
+  const signers = await ethers.getSigners();
   const owner = await TOKEN.connect(signers[0]);
   for (const signer of signers.slice(1)) {
     const address = await signer.getAddress();

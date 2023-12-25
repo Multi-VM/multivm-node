@@ -1,20 +1,10 @@
-import { formatEther, parseEther } from "ethers";
-import { ethers, network } from "hardhat";
+import { formatEther } from "ethers";
+import { ethers } from "hardhat";
+import { createUsersFromSigners, deployWrappedContract, depositWrapped } from "./helpers";
 
 async function main() {
-  const chainId = parseInt(await network.provider.send("eth_chainId"));
-  const signers = await ethers.getSigners();
-
-  console.log("Chain ID:", chainId);
-  for (const [index, signer] of signers.entries()) {
-    console.log(`User ${index}:`, await signer.getAddress());
-  }
-
-  console.log(`\nDeploying Wrapped MVM...`);
-  const WRAPPED_TOKEN_CONTRACT = await ethers.getContractFactory("WMVM");
-  const wToken = await WRAPPED_TOKEN_CONTRACT.deploy();
-  await wToken.waitForDeployment();
-
+  await createUsersFromSigners();
+  const wToken = await deployWrappedContract();
   const tokenAddress = await wToken.getAddress();
   const tokenName = await wToken.name();
   const tokenSymbol = await wToken.symbol();
@@ -27,15 +17,10 @@ async function main() {
   console.log(`Address: ${tokenAddress}`);
 
   // Test deposit
+  const signers = await ethers.getSigners();
   for (const signer of signers) {
     const address = await signer.getAddress();
-    const signed = await wToken.connect(signer);
-
-    const approveTx = await signed.approve(address, parseEther("0.1"));
-    await approveTx.wait();
-
-    const depositTx = await signed.deposit({ value: parseEther("0.1") });
-    await depositTx.wait();
+    await depositWrapped(wToken, signer, "500");
 
     const mvmBalance = await ethers.provider.getBalance(signer.address);
     console.log(`${address}: ${formatEther(mvmBalance)} MVM`);
