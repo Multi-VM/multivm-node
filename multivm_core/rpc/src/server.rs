@@ -196,23 +196,16 @@ impl MultivmServer {
             info!("eth_getTransactionCount {:#?}", params.sequence());
 
             let address = params.sequence().next::<String>().expect(INCORRECT_ARGS);
-            let mut tx_count: usize = 0;
+            let account_id = AccountId::Evm(
+                EvmAddress::try_from(H160::from_str(address.as_str()).expect(INCORRECT_ARGS))
+                    .unwrap(),
+            );
 
             let helper = Self::lock(&helper);
-            for height in 1..=helper.node.latest_block().height {
-                let block = helper.node.block_by_height(height).unwrap();
-                for tx in block.txs {
-                    match tx {
-                        SupportedTransaction::MultiVm(_) => {}
-                        SupportedTransaction::Evm(_) => {
-                            tx_count += 1;
-                        }
-                    }
-                }
-            }
+            let account = helper.account(&account_id).unwrap();
 
-            info!("Response: {}", tx_count.to_0x());
-            tx_count.to_0x()
+            info!("Response: {}", account.nonce.to_0x());
+            account.nonce.to_0x()
         })?;
         let helper = self.helper.clone();
         module.register_method("eth_getTransactionByHash", move |params, _| {
