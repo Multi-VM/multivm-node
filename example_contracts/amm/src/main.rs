@@ -394,12 +394,15 @@ impl AmmContract {
                 ethabi::Token::Uint(amount_in.into()),
             ])
             .unwrap();
-        env::cross_contract_call_raw(
+        let commitment = env::cross_contract_call_raw(
             token_in.clone(),
             "transferFrom".to_string(),
             0,
             encoded_input0.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not transfer token {}", token_in);
+        }
 
         let transfer_function = abi.function("transfer").unwrap();
         let encoded_input1 = transfer_function
@@ -408,12 +411,15 @@ impl AmmContract {
                 ethabi::Token::Uint(amount_out.into()),
             ])
             .unwrap();
-        env::cross_contract_call_raw(
+        let commitment = env::cross_contract_call_raw(
             token_out.clone(),
             "transfer".to_string(),
             0,
             encoded_input1.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not send token {}", token_out);
+        }
 
         if input.amount0_in > 0 {
             pool.reserve0 += amount_in;
