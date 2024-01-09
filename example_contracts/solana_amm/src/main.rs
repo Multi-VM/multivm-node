@@ -330,12 +330,15 @@ pub fn add_liquidity(
         let token0_address =
             multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token0.clone().address)
                 .unwrap();
-        multivm_sdk::env::cross_contract_call_raw(
-            token0_address.into(),
+        let commitment = multivm_sdk::env::cross_contract_call_raw(
+            token0_address.clone().into(),
             "transferFrom".to_string(),
             0,
             encoded_input0.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not transfer token {}", token0_address);
+        }
     }
 
     {
@@ -349,12 +352,15 @@ pub fn add_liquidity(
         let token1_address =
             multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token1.clone().address)
                 .unwrap();
-        multivm_sdk::env::cross_contract_call_raw(
-            token1_address.into(),
+        let commitment = multivm_sdk::env::cross_contract_call_raw(
+            token1_address.clone().into(),
             "transferFrom".to_string(),
             0,
             encoded_input1.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not transfer token {}", token1_address);
+        }
     }
 
     let shares = if pool.total_shares == 0 {
@@ -460,12 +466,15 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
         let token0_address =
             multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token0.clone().address)
                 .unwrap();
-        multivm_sdk::env::cross_contract_call_raw(
-            token0_address.into(),
+        let commitment = multivm_sdk::env::cross_contract_call_raw(
+            token0_address.clone().into(),
             "transfer".to_string(),
             0,
             encoded_input0.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not send token {}", token0_address);
+        }
     }
 
     {
@@ -478,12 +487,15 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
         let token1_address =
             multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token1.clone().address)
                 .unwrap();
-        multivm_sdk::env::cross_contract_call_raw(
-            token1_address.into(),
+            let commitment = multivm_sdk::env::cross_contract_call_raw(
+            token1_address.clone().into(),
             "transfer".to_string(),
             0,
             encoded_input1.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not send token {}", token1_address);
+        }
     }
 
     pool.total_shares -= user_pool_shares;
@@ -593,12 +605,15 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
                 ethabi::Token::Uint(amount_in.into()),
             ])
             .unwrap();
-        multivm_sdk::env::cross_contract_call_raw(
+        let commitment = multivm_sdk::env::cross_contract_call_raw(
             token_in.clone().into(),
             "transferFrom".to_string(),
             0,
             encoded_input0.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not transfer token {}", token_in);
+        }
     }
 
     {
@@ -609,12 +624,15 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
                 ethabi::Token::Uint(amount_out.into()),
             ])
             .unwrap();
-        multivm_sdk::env::cross_contract_call_raw(
+        let commitment = multivm_sdk::env::cross_contract_call_raw(
             token_out.clone().into(),
             "transfer".to_string(),
             0,
             encoded_input1.clone(),
         );
+        if commitment.response.is_err() {
+            panic!("Can not send token {}", token_out);
+        }
     }
 
     if request.amount0_in > 0 {
