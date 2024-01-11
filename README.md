@@ -2,7 +2,7 @@
 
 MultiVM ZKP Blockchain Node is our blockchain prototype, which utilizes zero-knowledge proofs (via [risc0](https://github.com/risc0/risc0)) for all state transitions.
 
-Architecture description, playground cases, tech details and other documentation could be found on [MultiVM Wiki](https://github.com/Multi-VM/multivm-node/wiki)
+Architecture description, playground cases, tech details and other documentation could be found on [MultiVM Docs](https://docs.multivm.io/)
 
 ## Structure
 
