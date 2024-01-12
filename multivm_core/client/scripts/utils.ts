@@ -112,8 +112,8 @@ export const swapArgs = {
 export const PoolSchema = {
   struct: {
     id: "u128",
-    token0: { struct: { symbol: "string", address: "string" } },
-    token1: { struct: { symbol: "string", address: "string" } },
+    token0: { struct: { symbol: "string", address: "string", decimals: "u8" } },
+    token1: { struct: { symbol: "string", address: "string", decimals: "u8" } },
     reserve0: "u128",
     reserve1: "u128",
     total_shares: "u128",

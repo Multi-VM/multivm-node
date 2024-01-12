@@ -30,6 +30,7 @@ pub struct Pool {
 pub struct Token {
     pub symbol: String,
     pub address: String,
+    pub decimals: u8,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]

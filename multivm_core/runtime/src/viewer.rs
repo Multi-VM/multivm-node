@@ -116,7 +116,7 @@ impl Viewer {
                                 .unwrap(),
                         )
                     }
-                    _ => unreachable!("MultiVM view for non-MultiVM contract"),
+                    _ => unreachable!("Non MultiVM view for MultiVM contract"),
                 },
                 Some(Executable::Evm()) => {
                     let action = borsh::to_vec(&Action::View(

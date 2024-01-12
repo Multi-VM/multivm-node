@@ -200,12 +200,13 @@ impl MultivmServer {
                 EvmAddress::try_from(H160::from_str(address.as_str()).expect(INCORRECT_ARGS))
                     .unwrap(),
             );
-
             let helper = Self::lock(&helper);
-            let account = helper.account(&account_id).unwrap();
-
-            info!("Response: {}", account.nonce.to_0x());
-            account.nonce.to_0x()
+            let nonce = helper
+                .account(&account_id)
+                .map(|a| a.nonce)
+                .unwrap_or_default();
+            info!("Response: {}", nonce.to_0x());
+            nonce.to_0x()
         })?;
         let helper = self.helper.clone();
         module.register_method("eth_getTransactionByHash", move |params, _| {

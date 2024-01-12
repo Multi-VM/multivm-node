@@ -28,6 +28,7 @@ pub struct Pool {
 pub struct Token {
     pub symbol: String,
     pub address: String,
+    pub decimals: u8,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -117,38 +118,86 @@ impl AmmContract {
         let mut state = Self::load();
 
         let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
-        let function = abi.function("symbol").unwrap();
-        let encoded_input = function.encode_input(&vec![]).unwrap();
+        let symbol_function = abi.function("symbol").unwrap();
+        let symbol_input = symbol_function.encode_input(&vec![]).unwrap();
+        let decimals_function = abi.function("decimals").unwrap();
+        let decimals_input = decimals_function.encode_input(&vec![]).unwrap();
 
         let token0_id = Self::token_id(input.token0.clone());
-        let commitment0 =
-            env::cross_contract_call_raw(token0_id, "symbol".to_string(), 0, encoded_input.clone());
-        let response_bytes0: Vec<u8> = borsh::from_slice(&commitment0.response.unwrap()).unwrap();
-        let symbol0 = function
-            .decode_output(response_bytes0.as_slice())
+        let commitment = env::cross_contract_call_raw(
+            token0_id.clone(),
+            "symbol".to_string(),
+            0,
+            symbol_input.clone(),
+        );
+        let response_bytes: Vec<u8> = borsh::from_slice(&commitment.response.unwrap()).unwrap();
+        let symbol0 = symbol_function
+            .decode_output(response_bytes.as_slice())
             .unwrap()
             .first()
             .unwrap()
             .to_string();
 
+        let commitment = env::cross_contract_call_raw(
+            token0_id.clone(),
+            "decimals".to_string(),
+            0,
+            decimals_input.clone(),
+        );
+        let response_bytes: Vec<u8> = borsh::from_slice(&commitment.response.unwrap()).unwrap();
+        let decimals0 = decimals_function
+            .decode_output(response_bytes.as_slice())
+            .unwrap()
+            .first()
+            .unwrap()
+            .clone()
+            .into_uint()
+            .unwrap()
+            .try_into()
+            .unwrap();
+
         let token1_id = Self::token_id(input.token1.clone());
-        let commitment1 =
-            env::cross_contract_call_raw(token1_id, "symbol".to_string(), 0, encoded_input.clone());
-        let response_bytes1: Vec<u8> = borsh::from_slice(&commitment1.response.unwrap()).unwrap();
-        let symbol1 = function
-            .decode_output(response_bytes1.as_slice())
+        let commitment = env::cross_contract_call_raw(
+            token1_id.clone(),
+            "symbol".to_string(),
+            0,
+            symbol_input.clone(),
+        );
+        let response_bytes: Vec<u8> = borsh::from_slice(&commitment.response.unwrap()).unwrap();
+        let symbol1 = symbol_function
+            .decode_output(response_bytes.as_slice())
             .unwrap()
             .first()
             .unwrap()
             .to_string();
+
+        let commitment = env::cross_contract_call_raw(
+            token1_id.clone(),
+            "decimals".to_string(),
+            0,
+            decimals_input.clone(),
+        );
+        let response_bytes: Vec<u8> = borsh::from_slice(&commitment.response.unwrap()).unwrap();
+        let decimals1 = decimals_function
+            .decode_output(response_bytes.as_slice())
+            .unwrap()
+            .first()
+            .unwrap()
+            .clone()
+            .into_uint()
+            .unwrap()
+            .try_into()
+            .unwrap();
 
         let token0 = Token {
             symbol: symbol0,
             address: input.token0,
+            decimals: decimals0,
         };
         let token1 = Token {
             symbol: symbol1,
             address: input.token1,
+            decimals: decimals1,
         };
         let id = state.pools.len() as u128;
 
