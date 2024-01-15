@@ -105,6 +105,13 @@ impl Env {
 
     /// Returns the storage value for the given key, return None if storage is not exist
     pub fn get_storage<T: BorshDeserialize>(&mut self, key: StorageKey) -> Option<T> {
+        self.get_storage_raw(key)
+            .map(|storage| borsh::from_slice(&storage))
+            .transpose()
+            .expect("Expected to deserialize")
+    }
+
+    pub fn get_storage_raw(&mut self, key: StorageKey) -> Option<Vec<u8>> {
         if let Some(storage_bytes) = self.storage_cache.get(&key) {
             return Some(
                 BorshDeserialize::try_from_slice(storage_bytes.0.as_slice())
@@ -134,15 +141,16 @@ impl Env {
             .insert(key.clone(), (storage.clone(), false));
         self.initial_storage_hashes.insert(key, hash);
 
-        Some(
-            borsh::BorshDeserialize::deserialize(&mut storage.as_slice())
-                .expect("Expected to deserialize"),
-        )
+        Some(storage)
     }
 
     pub fn set_storage<T: borsh::BorshSerialize>(&mut self, key: String, data: T) {
         let storage_bytes = borsh::to_vec(&data).expect("Expected to serialize");
 
+        self.set_storage_raw(key, storage_bytes)
+    }
+
+    pub fn set_storage_raw(&mut self, key: String, storage_bytes: Vec<u8>) {
         self.storage_cache
             .insert(key.clone(), (storage_bytes.clone(), true));
     }
@@ -215,6 +223,8 @@ impl Env {
             cross_calls_hashes,
         } = self;
 
+        println!("panic: {}", message);
+
         let commitment = Commitment {
             response: Err(ContractError::new(message)),
             call_hash: call_hash,
@@ -283,8 +293,20 @@ pub fn get_storage<T: BorshDeserialize>(key: StorageKey) -> Option<T> {
     ENV.lock().unwrap().as_mut().unwrap().get_storage(key)
 }
 
+pub fn get_storage_raw(key: StorageKey) -> Option<Vec<u8>> {
+    ENV.lock().unwrap().as_mut().unwrap().get_storage_raw(key)
+}
+
 pub fn set_storage<T: borsh::BorshSerialize>(key: String, data: T) {
     ENV.lock().unwrap().as_mut().unwrap().set_storage(key, data)
+}
+
+pub fn set_storage_raw(key: String, storage_bytes: Vec<u8>) {
+    ENV.lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .set_storage_raw(key, storage_bytes)
 }
 
 pub fn commit<T: borsh::BorshSerialize>(output: T) {

@@ -1,6 +1,7 @@
 #![no_main]
 
 use ethabi::ethereum_types::U256;
+use instruction::{AddLiquidityRequest, AddPoolRequest, SwapRequest};
 use num::integer::Roots;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -11,6 +12,10 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
 };
+
+use crate::instruction::Instruction;
+
+mod instruction;
 
 const ABI_BYTES: &[u8] = include_bytes!("../../../multivm_core/etc/evm_contracts/erc20.abi");
 
@@ -35,38 +40,12 @@ pub struct Token {
     pub address: String,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct AddPoolRequest {
-    pub token0: String,
-    pub token1: String,
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct AddLiquidityRequest {
-    pub amount0: u128,
-    pub amount1: u128,
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct SwapRequest {
-    pub amount0_in: u128,
-    pub amount1_in: u128,
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub enum Instruction {
-    Init(),
-    AddPool(AddPoolRequest),
-    AddLiquidity(AddLiquidityRequest),
-    RemoveLiquidity(),
-    Swap(SwapRequest),
-}
-
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub struct MultiVmAccount {
     internal_id: u128,
     pub evm_address: multivm_sdk::multivm_primitives::EvmAddress,
     pub multivm_account_id: Option<multivm_sdk::multivm_primitives::MultiVmAccountId>,
+    pub solana_address: Option<multivm_sdk::multivm_primitives::SolanaAddress>,
     pub executable: Option<Executable>,
     pub balance: u128,
     pub nonce: u64,
@@ -76,10 +55,15 @@ pub struct MultiVmAccount {
 pub enum Executable {
     Evm(),
     MultiVm(MultiVmExecutable),
+    Solana(SolanaExecutable),
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub struct MultiVmExecutable {
+    pub image_id: [u32; 8],
+}
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+pub struct SolanaExecutable {
     pub image_id: [u32; 8],
 }
 
@@ -100,7 +84,7 @@ pub fn process_instruction(
         Instruction::AddPool(request) => add_pool(program_id, accounts, request),
         Instruction::AddLiquidity(request) => add_liquidity(program_id, accounts, request),
         Instruction::RemoveLiquidity() => remove_liquidity(program_id, accounts),
-        Instruction::Swap(_) => todo!(),
+        Instruction::Swap(request) => swap(program_id, accounts, request),
     }
 }
 
@@ -120,8 +104,8 @@ pub fn init(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
             return Err(ProgramError::IncorrectProgramId);
         }
     }
-    let state = State { next_pool_id: 123 };
-    borsh::to_writer(&mut &mut state_account.try_borrow_mut_data()?[..], &state).unwrap();
+    let state = State { next_pool_id: 1 };
+    borsh::to_writer(&mut &mut state_account.try_borrow_mut_data()?[..], &state)?;
 
     Ok(())
 }
@@ -132,7 +116,6 @@ pub fn add_pool(
     request: AddPoolRequest,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
-
     let _signer_account = next_account_info(accounts_iter)?;
     let state_account = next_account_info(accounts_iter)?;
     {
@@ -146,7 +129,7 @@ pub fn add_pool(
             return Err(ProgramError::IncorrectProgramId);
         }
     }
-    let mut state: State = borsh::from_slice(&state_account.data.borrow())?;
+    let mut state = State::deserialize(&mut &state_account.try_borrow_data()?[..])?;
     let pool_id = state.next_pool_id;
     state.next_pool_id += 1;
 
@@ -157,9 +140,14 @@ pub fn add_pool(
             return Err(ProgramError::IncorrectProgramId);
         }
         let expected_pool_account_key =
-            Pubkey::find_program_address(&[b"pool", &pool_id.to_le_bytes()], program_id).0;
+            Pubkey::find_program_address(&[b"pool", &pool_id.to_be_bytes()], program_id).0;
+        msg!("{:?}", pool_id.to_be_bytes());
         if pool_account.key != &expected_pool_account_key {
-            msg!("Pool account does not have the correct address");
+            msg!(
+                "Pool account does not have the correct address. Expected: {:?}, actual: {:?}",
+                expected_pool_account_key,
+                pool_account.key
+            );
             return Err(ProgramError::IncorrectProgramId);
         }
     }
@@ -182,6 +170,7 @@ pub fn add_pool(
             );
             let response_bytes0: Vec<u8> =
                 borsh::from_slice(&commitment0.response.unwrap()).unwrap();
+
             let symbol = function
                 .decode_output(response_bytes0.as_slice())
                 .unwrap()
@@ -205,10 +194,10 @@ pub fn add_pool(
         total_shares: 0,
     };
 
-    borsh::to_writer(&mut &mut pool_account.try_borrow_mut_data()?[..], &pool).unwrap();
-    borsh::to_writer(&mut &mut state_account.try_borrow_mut_data()?[..], &state).unwrap();
+    borsh::to_writer(&mut &mut pool_account.try_borrow_mut_data()?[..], &pool)?;
+    borsh::to_writer(&mut &mut state_account.try_borrow_mut_data()?[..], &state)?;
 
-    println!("Pool created: {:?}", pool);
+    msg!("Pool created: {:?}", pool);
 
     Ok(())
 }
@@ -221,10 +210,10 @@ pub fn add_liquidity(
     let accounts_iter = &mut accounts.iter();
 
     let user_account = next_account_info(accounts_iter)?;
-    if !user_account.is_signer {
-        msg!("User account is not signer");
-        return Err(ProgramError::MissingRequiredSignature);
-    }
+    // if !user_account.is_signer {
+    //     msg!("User account is not signer");
+    //     return Err(ProgramError::MissingRequiredSignature);
+    // }
 
     let pool_account = next_account_info(accounts_iter)?;
     let mut pool = {
@@ -232,9 +221,9 @@ pub fn add_liquidity(
             msg!("Pool account does not have the correct program id");
             return Err(ProgramError::IncorrectProgramId);
         }
-        let pool: Pool = borsh::from_slice(&pool_account.data.borrow())?;
+        let pool = Pool::deserialize(&mut &pool_account.try_borrow_data()?[..])?;
         let expected_pool_account_key =
-            Pubkey::find_program_address(&[b"pool", &pool.id.to_le_bytes()], program_id).0;
+            Pubkey::find_program_address(&[b"pool", &pool.id.to_be_bytes()], program_id).0;
         if pool_account.key != &expected_pool_account_key {
             msg!("Pool account does not have the correct address");
             return Err(ProgramError::IncorrectProgramId);
@@ -252,7 +241,7 @@ pub fn add_liquidity(
             &[
                 b"user_pool_shares",
                 &user_account.key.to_bytes(),
-                &pool.id.to_le_bytes(),
+                &pool.id.to_be_bytes(),
             ],
             program_id,
         );
@@ -260,7 +249,7 @@ pub fn add_liquidity(
             msg!("User pool shares account does not have the correct address");
             return Err(ProgramError::IncorrectProgramId);
         }
-        borsh::from_slice(&user_pool_shares_account.data.borrow())?
+        u128::deserialize(&mut &user_pool_shares_account.try_borrow_data()?[..])?
     };
 
     let user_multivm_account = {
@@ -268,8 +257,9 @@ pub fn add_liquidity(
             multivm_sdk::multivm_primitives::AccountId::system_meta_contract(),
             "account_info".to_string(),
             0,
-            &multivm_sdk::multivm_primitives::SolanaAddress::from(user_account.key.to_bytes())
-                .to_string(),
+            &multivm_sdk::multivm_primitives::AccountId::from(
+                multivm_sdk::multivm_primitives::SolanaAddress::from(user_account.key.to_bytes()),
+            ),
         );
         borsh::from_slice::<Option<MultiVmAccount>>(&commitment.response.unwrap())
             .unwrap()
@@ -281,8 +271,9 @@ pub fn add_liquidity(
             multivm_sdk::multivm_primitives::AccountId::system_meta_contract(),
             "account_info".to_string(),
             0,
-            &multivm_sdk::multivm_primitives::SolanaAddress::from(program_id.to_bytes())
-                .to_string(),
+            &multivm_sdk::multivm_primitives::AccountId::from(
+                multivm_sdk::multivm_primitives::SolanaAddress::from(program_id.to_bytes()),
+            ),
         );
         borsh::from_slice::<Option<MultiVmAccount>>(&commitment.response.unwrap())
             .unwrap()
@@ -374,15 +365,13 @@ pub fn add_liquidity(
     pool.reserve1 += amount1;
 
     user_pool_shares += shares;
-    user_pool_shares_account
-        .data
-        .borrow_mut()
-        .copy_from_slice(&borsh::to_vec(&user_pool_shares)?);
 
-    pool_account
-        .data
-        .borrow_mut()
-        .copy_from_slice(&borsh::to_vec(&pool)?);
+    borsh::to_writer(
+        &mut &mut user_pool_shares_account.try_borrow_mut_data()?[..],
+        &user_pool_shares,
+    )?;
+
+    borsh::to_writer(&mut &mut pool_account.try_borrow_mut_data()?[..], &pool)?;
 
     Ok(())
 }
@@ -391,10 +380,10 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
     let accounts_iter = &mut accounts.iter();
 
     let user_account = next_account_info(accounts_iter)?;
-    if !user_account.is_signer {
-        msg!("User account is not signer");
-        return Err(ProgramError::MissingRequiredSignature);
-    }
+    // if !user_account.is_signer {
+    //     msg!("User account is not signer");
+    //     return Err(ProgramError::MissingRequiredSignature);
+    // }
 
     let pool_account = next_account_info(accounts_iter)?;
     let mut pool = {
@@ -402,9 +391,9 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
             msg!("Pool account does not have the correct program id");
             return Err(ProgramError::IncorrectProgramId);
         }
-        let pool: Pool = borsh::from_slice(&pool_account.data.borrow())?;
+        let pool = Pool::deserialize(&mut &pool_account.try_borrow_data()?[..])?;
         let expected_pool_account_key =
-            Pubkey::find_program_address(&[b"pool", &pool.id.to_le_bytes()], program_id).0;
+            Pubkey::find_program_address(&[b"pool", &pool.id.to_be_bytes()], program_id).0;
         if pool_account.key != &expected_pool_account_key {
             msg!("Pool account does not have the correct address");
             return Err(ProgramError::IncorrectProgramId);
@@ -422,7 +411,7 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
             &[
                 b"user_pool_shares",
                 &user_account.key.to_bytes(),
-                &pool.id.to_le_bytes(),
+                &pool.id.to_be_bytes(),
             ],
             program_id,
         );
@@ -430,7 +419,7 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
             msg!("User pool shares account does not have the correct address");
             return Err(ProgramError::IncorrectProgramId);
         }
-        borsh::from_slice(&user_pool_shares_account.data.borrow())?
+        u128::deserialize(&mut &user_pool_shares_account.try_borrow_data()?[..])?
     };
 
     let user_multivm_account = {
@@ -438,8 +427,9 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
             multivm_sdk::multivm_primitives::AccountId::system_meta_contract(),
             "account_info".to_string(),
             0,
-            &multivm_sdk::multivm_primitives::SolanaAddress::from(user_account.key.to_bytes())
-                .to_string(),
+            &multivm_sdk::multivm_primitives::AccountId::from(
+                multivm_sdk::multivm_primitives::SolanaAddress::from(user_account.key.to_bytes()),
+            ),
         );
         borsh::from_slice::<Option<MultiVmAccount>>(&commitment.response.unwrap())
             .unwrap()
@@ -487,7 +477,7 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
         let token1_address =
             multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token1.clone().address)
                 .unwrap();
-            let commitment = multivm_sdk::env::cross_contract_call_raw(
+        let commitment = multivm_sdk::env::cross_contract_call_raw(
             token1_address.clone().into(),
             "transfer".to_string(),
             0,
@@ -504,15 +494,12 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
 
     user_pool_shares = 0;
 
-    user_pool_shares_account
-        .data
-        .borrow_mut()
-        .copy_from_slice(&borsh::to_vec(&user_pool_shares)?);
+    borsh::to_writer(
+        &mut &mut user_pool_shares_account.try_borrow_mut_data()?[..],
+        &user_pool_shares,
+    )?;
 
-    pool_account
-        .data
-        .borrow_mut()
-        .copy_from_slice(&borsh::to_vec(&pool)?);
+    borsh::to_writer(&mut &mut pool_account.try_borrow_mut_data()?[..], &pool)?;
 
     Ok(())
 }
@@ -521,10 +508,10 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
     let accounts_iter = &mut accounts.iter();
 
     let user_account = next_account_info(accounts_iter)?;
-    if !user_account.is_signer {
-        msg!("User account is not signer");
-        return Err(ProgramError::MissingRequiredSignature);
-    }
+    // if !user_account.is_signer {
+    //     msg!("User account is not signer");
+    //     return Err(ProgramError::MissingRequiredSignature);
+    // }
 
     let pool_account = next_account_info(accounts_iter)?;
     let mut pool = {
@@ -532,9 +519,9 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
             msg!("Pool account does not have the correct program id");
             return Err(ProgramError::IncorrectProgramId);
         }
-        let pool: Pool = borsh::from_slice(&pool_account.data.borrow())?;
+        let pool = Pool::deserialize(&mut &pool_account.try_borrow_data()?[..])?;
         let expected_pool_account_key =
-            Pubkey::find_program_address(&[b"pool", &pool.id.to_le_bytes()], program_id).0;
+            Pubkey::find_program_address(&[b"pool", &pool.id.to_be_bytes()], program_id).0;
         if pool_account.key != &expected_pool_account_key {
             msg!("Pool account does not have the correct address");
             return Err(ProgramError::IncorrectProgramId);
@@ -547,8 +534,9 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
             multivm_sdk::multivm_primitives::AccountId::system_meta_contract(),
             "account_info".to_string(),
             0,
-            &multivm_sdk::multivm_primitives::SolanaAddress::from(user_account.key.to_bytes())
-                .to_string(),
+            &multivm_sdk::multivm_primitives::AccountId::from(
+                multivm_sdk::multivm_primitives::SolanaAddress::from(user_account.key.to_bytes()),
+            ),
         );
         borsh::from_slice::<Option<MultiVmAccount>>(&commitment.response.unwrap())
             .unwrap()
@@ -560,8 +548,9 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
             multivm_sdk::multivm_primitives::AccountId::system_meta_contract(),
             "account_info".to_string(),
             0,
-            &multivm_sdk::multivm_primitives::SolanaAddress::from(program_id.to_bytes())
-                .to_string(),
+            &multivm_sdk::multivm_primitives::AccountId::from(
+                multivm_sdk::multivm_primitives::SolanaAddress::from(program_id.to_bytes()),
+            ),
         );
         borsh::from_slice::<Option<MultiVmAccount>>(&commitment.response.unwrap())
             .unwrap()
@@ -643,10 +632,7 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
         pool.reserve1 += amount_in;
     }
 
-    pool_account
-        .data
-        .borrow_mut()
-        .copy_from_slice(&borsh::to_vec(&pool)?);
+    borsh::to_writer(&mut &mut pool_account.try_borrow_mut_data()?[..], &pool)?;
 
     Ok(())
 }

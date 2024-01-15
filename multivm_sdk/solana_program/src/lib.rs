@@ -48,11 +48,18 @@ pub mod entrypoint {
             // Include generated main in a module so we don't conflict
             // with any other definitions of "main" in this file.
             mod zkvm_generated_main {
+                use std::io::Read;
+
                 #[no_mangle]
                 fn main() {
+                    let mut bytes = Vec::<u8>::new();
+                    risc0_zkvm::guest::env::stdin()
+                        .read_to_end(&mut bytes)
+                        .unwrap();
+
                     let context =
                         solana_program::multivm_primitives::ContractCallContext::try_from_bytes(
-                            solana_program::risc0_zkvm::guest::env::read(),
+                            bytes,
                         )
                         .expect("Corrupted ContractCallContext");
 
@@ -72,7 +79,7 @@ pub mod entrypoint {
                         .into_iter()
                         .map(|key| {
                             let storage: Vec<u8> =
-                                solana_program::multivm_sdk::env::get_storage(key.to_string())
+                                solana_program::multivm_sdk::env::get_storage_raw(key.to_string())
                                     .unwrap_or_else(|| vec![0u8; 1024]);
                             (key, storage, 0u64)
                         })
@@ -99,7 +106,9 @@ pub mod entrypoint {
                     let instruction_data: &[u8] = &solana_context.instruction_data;
 
                     match super::ZKVM_ENTRY(&program_id, &accounts, instruction_data) {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            println!("success")
+                        }
                         Err(e) => {
                             panic!("{}", e)
                         }
@@ -107,10 +116,7 @@ pub mod entrypoint {
 
                     for (key, data, lamports) in data {
                         println!("updating storage {:?}", key);
-                        solana_program::multivm_sdk::env::set_storage(
-                            key.to_string(),
-                            data.as_slice(),
-                        );
+                        solana_program::multivm_sdk::env::set_storage_raw(key.to_string(), data);
                     }
 
                     solana_program::multivm_sdk::env::commit(());

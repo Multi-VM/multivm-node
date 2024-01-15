@@ -6,6 +6,23 @@ const getID = () => ++ID;
 export const defaultGas = BigInt(300_000);
 export const defaultDeposit = BigInt(0);
 
+export function bigintToBeBytes(value: bigint, length: number) {
+  const hexString = value.toString(16);
+  const hexLength = length * 2;
+  const byteLength = Math.ceil(hexLength / 2);
+  const bytes = new Uint8Array(byteLength);
+
+  for (let i = 0; i < byteLength; i++) {
+    const startIndex = Math.max(hexLength - (i + 1) * 2, 0);
+    const endIndex = Math.min(hexLength - i * 2, hexLength);
+    const byteString = hexString.slice(startIndex, endIndex);
+    const byteValue = parseInt(byteString, 16);
+    bytes[i] = byteValue;
+  }
+
+  return bytes;
+}
+
 export async function call(method: string, params: any) {
   const response = await fetch(network.config?.url || "http://127.0.0.1:8080", {
     headers: {
@@ -42,6 +59,12 @@ export async function view(account: string, method: string, args: any) {
       gas: 0, // ?
       deposit: 0, // ?
     },
+  ]);
+}
+
+export async function accountInfo(accountId: string) {
+  return await call("mvm_accountInfo", [
+    accountId,
   ]);
 }
 
@@ -157,3 +180,80 @@ export const SolanaContextSchema = {
     }
   },
 };
+
+export const SolanaAmmSchema = {
+  enum: [
+    {
+      struct: {
+        init: {
+          struct: {
+            phantom: "bool"
+          }
+        }
+      }
+    },
+    {
+      struct: {
+        add_pool: {
+          struct: {
+            token0: "string",
+            token1: "string"
+          }
+        }
+      },
+    },
+    {
+      struct: {
+        add_liquidity: {
+          struct: {
+            amount0: "u128",
+            amount1: "u128"
+          }
+        }
+      },
+    },
+    {
+      struct: {
+        remove_liquidity: {
+          struct: {
+            phantom: "bool"
+          }
+        }
+      },
+    },
+    {
+      struct: {
+        swap: {
+          struct: {
+            amount0_in: "u128",
+            amount1_in: "u128",
+          }
+        }
+      },
+    }
+  ]
+}
+
+export const SolanaAmmStateSchema = {
+  struct: {
+    next_pool_id: "u128",
+  }
+}
+
+export const SolanaAmmTokenSchema = {
+  struct: {
+    symbol: "string",
+    address: "string",
+  }
+}
+
+export const SolanaAmmPoolSchema = {
+  struct: {
+    id: "u128",
+    token0: SolanaAmmTokenSchema,
+    token1: SolanaAmmTokenSchema,
+    reserve0: "u128",
+    reserve1: "u128",
+    total_shares: "u128",
+  }
+}

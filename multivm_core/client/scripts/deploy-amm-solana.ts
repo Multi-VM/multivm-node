@@ -12,8 +12,14 @@ import {
   toHexString,
   transactionSchema,
   view,
+  accountInfo,
+  SolanaAmmSchema,
+  SolanaAmmStateSchema,
+  bigintToBeBytes,
+  SolanaAmmPoolSchema,
+  SolanaAmmTokenSchema
 } from "./utils";
-import { serialize } from "borsh";
+import { deserialize, serialize } from "borsh";
 
 const AMM_CONTRACT_SRC =
   "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/solana_amm";
@@ -68,48 +74,131 @@ async function main() {
 
   console.log(`AMM deployed`, await amm.getAddress());
 
+  const program_id = new solanaWeb3.PublicKey((await accountInfo("solana_amm.multivm"))["result"]["solana_address"]);
+  const owner_solana_id = new solanaWeb3.PublicKey((await accountInfo(owner.address))["result"]["solana_address"]);
+
   console.log(`\n —— [init] send transaction...`);
-
-  const program_id = new solanaWeb3.PublicKey("SzKDof1CX8t39ns784mNZtq6mCs2NT9p7B2KBNmFYPR");
-
-  const token1Seed = Uint8Array.from(Buffer.from(token1Address.slice(2), 'hex'));
-  const token2Seed = Uint8Array.from(Buffer.from(token2Address.slice(2), 'hex'));
-
-
-  const [state_account_address, _] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("state")], program_id);
-  // const [pool_account_address, _] = solanaWeb3.PublicKey.findProgramAddressSync([token1Seed, token2Seed], program_id);
-
-  // console.log(`pool_account_address: ${pool_account_address.toBase58()}`);
-
-  let data = await solana_data(program_id.toBase58(), state_account_address.toBase58());
-  console.log(data)
-
-  const instruction_data = new Uint8Array([0]);
-  // instruction_data.set([1]);
-  // instruction_data.set(token1Seed, 1);
-  // instruction_data.set(token2Seed, 1 + token1Seed.length);
-
-  // console.log(`token1Seed`, token1Seed);
-
-  const init = await owner.sendTransaction({
-    to: amm,
-    data: serialize(transactionSchema, {
-      method: "init",
-      args: serialize(SolanaContextSchema, {
-        accounts: [state_account_address.toBytes(), state_account_address.toBytes()],
-        instruction_data: instruction_data,
+  const [state_account_id, _] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("state")], program_id);
+  {
+    const instruction_data = new Uint8Array([0]);
+    // const instruction_data = serialize(SolanaAmmSchema, {
+    // });
+    const init = await owner.sendTransaction({
+      to: amm,
+      data: serialize(transactionSchema, {
+        method: "init",
+        args: serialize(SolanaContextSchema, {
+          accounts: [owner_solana_id.toBytes(), state_account_id.toBytes()],
+          instruction_data: instruction_data,
+        }),
+        gas: BigInt(300_000),
+        deposit: BigInt(0),
       }),
-      gas: BigInt(300_000),
-      deposit: BigInt(0),
-    }),
-  });
-  console.dir(init);
+    });
+    console.dir(init);
+    console.log(` ——[init] ready!`);
 
-  let data2 = await solana_data(program_id.toBase58(), state_account_address.toBase58());
-  console.log(data2)
+  }
 
-  console.log(` ——[init] ready!`);
+  const state_account_data = (await solana_data(program_id.toBase58(), state_account_id.toBase58()))["result"];
+  const state = deserialize(SolanaAmmStateSchema, state_account_data);
+  console.log(state)
+  const pool_id = state["next_pool_id"];
+  const pool_id_bytes = bigintToBeBytes(pool_id, 16)
+  console.log(pool_id)
 
+  const [pool_state_account_id] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
+
+  // ADD POOL
+  {
+    console.log(`\n —— [add_pool] send transaction...`);
+
+    const instruction_data = serialize(SolanaAmmSchema, {
+      add_pool: {
+        token0: token1Address,
+        token1: token2Address,
+      }
+    });
+    const add_pool = await owner.sendTransaction({
+      to: amm,
+      data: serialize(transactionSchema, {
+        method: "",
+        args: serialize(SolanaContextSchema, {
+          accounts: [owner_solana_id.toBytes(), state_account_id.toBytes(), pool_state_account_id.toBytes()],
+          instruction_data: instruction_data,
+        }),
+        gas: BigInt(300_000),
+        deposit: BigInt(0),
+      }),
+    });
+    console.dir(add_pool);
+
+    const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
+    const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
+    console.log(pool_state)
+  }
+  console.log(` ——[add_pool] ready!`);
+
+
+  // ADD LIQUIDITY
+  console.log(`\n —— [add_liquidity] send transaction...`);
+  const [user_pool_shares_account_id] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("user_pool_shares"), owner_solana_id.toBytes(), pool_id_bytes], program_id);
+  {
+    const instruction_data = serialize(SolanaAmmSchema, {
+      add_liquidity: {
+        amount0: 100,
+        amount1: 20_000,
+      }
+    });
+    const add_liquidity = await owner.sendTransaction({
+      to: amm,
+      data: serialize(transactionSchema, {
+        method: "",
+        args: serialize(SolanaContextSchema, {
+          accounts: [owner_solana_id.toBytes(), pool_state_account_id.toBytes(), user_pool_shares_account_id.toBytes()],
+          instruction_data: instruction_data,
+        }),
+        gas: BigInt(300_000),
+        deposit: BigInt(0),
+      }),
+    });
+    console.dir(add_liquidity);
+
+    const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
+    const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
+    console.log(pool_state)
+  }
+  console.log(` ——[add_liquidity] ready!`);
+
+
+  // SWAP
+  console.log(`\n —— [swap] send transaction...`);
+  {
+    const instruction_data = serialize(SolanaAmmSchema, {
+      swap: {
+        amount0_in: 1,
+        amount1_in: 0,
+      }
+    });
+    const swap = await owner.sendTransaction({
+      to: amm,
+      data: serialize(transactionSchema, {
+        method: "",
+        args: serialize(SolanaContextSchema, {
+          accounts: [owner_solana_id.toBytes(), pool_state_account_id.toBytes()],
+          instruction_data: instruction_data,
+        }),
+        gas: BigInt(300_000),
+        deposit: BigInt(0),
+      }),
+    });
+    console.dir(swap);
+
+    const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
+    const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
+    console.log(pool_state)
+  }
+  console.log(` —[swap] ready!`);
 }
 
 main()
