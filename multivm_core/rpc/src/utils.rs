@@ -236,7 +236,7 @@ pub struct EthTransactionReceipt {
 }
 
 impl EthTransactionReceipt {
-    pub fn from(tx: &SupportedTransaction, hash: String, block: &Block) -> Self {
+    pub fn from(_tx: &SupportedTransaction, hash: String, block: &Block) -> Self {
         let from = "0x69288587af88e2c6f43832F482334a01F30e2F01";
         let to = "0x06A85356DCb5b307096726FB86A78c59D38e08ee";
         Self {

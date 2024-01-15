@@ -2605,6 +2605,7 @@ dependencies = [
  "multivm_runtime",
  "playgrounds",
  "primitive-types",
+ "rand",
  "serde",
  "serde_json",
  "tokio",

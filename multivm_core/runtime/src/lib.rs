@@ -83,6 +83,7 @@ impl MultivmNode {
     pub fn latest_block(&self) -> Block {
         let mut latest_block_bytes = self.db.get(b"latest_block").unwrap().unwrap().to_vec();
         let latest_block: Block = borsh::from_slice(&mut latest_block_bytes).unwrap();
+        debug!(height = latest_block.height, "Latest block in runtime");
 
         latest_block
     }

@@ -34,8 +34,9 @@ struct NodeOptions {
 async fn main() -> anyhow::Result<()> {
     install_tracing();
 
-    let options = NodeOptions::parse();
+    let NodeOptions { db_path, port } = NodeOptions::parse();
 
-    let server = MultivmServer::new(options.db_path);
-    server.start(options.port).await
+    let server = MultivmServer::new();
+
+    server.start(db_path, port).await
 }

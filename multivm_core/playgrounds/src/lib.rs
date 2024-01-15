@@ -8,7 +8,6 @@ use multivm_primitives::{
 };
 use multivm_runtime::{account::Account, MultivmNode};
 use rand::rngs::OsRng;
-use tracing::info;
 
 pub fn install_tracing() {
     use tracing_subscriber::{fmt, prelude::*, registry, EnvFilter};
