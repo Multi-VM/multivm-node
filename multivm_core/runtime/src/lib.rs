@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use account::{Account, Executable};
+use anyhow::Result;
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
 use borsh::BorshSerialize;
@@ -156,7 +157,7 @@ impl MultivmNode {
         Viewer::view_system_meta_contract(method, args, self.db.clone())
     }
 
-    pub fn contract_view(&self, view: SupportedView) -> ContractResponse {
+    pub fn contract_view(&self, view: SupportedView) -> Result<ContractResponse> {
         Viewer::new(view, self.db.clone()).view()
     }
 

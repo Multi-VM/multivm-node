@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use multivm_primitives::{
     k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
@@ -228,7 +229,7 @@ impl NodeHelper {
         self.node.account_info(account_id)
     }
 
-    pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> ContractResponse {
+    pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> Result<ContractResponse> {
         let response = self
             .node
             .contract_view(multivm_runtime::viewer::SupportedView::MultiVm(

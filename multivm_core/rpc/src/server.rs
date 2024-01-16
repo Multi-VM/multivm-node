@@ -336,8 +336,8 @@ impl MultivmServer {
 
             let result = helper.view(&contract_id.into(), call);
             match result {
-                Ok(data) => Ok(data.to_0x()),
-                Err(_error) => Ok(0u128.to_0x()),
+                Ok(Ok(data)) => Ok(data.to_0x()),
+                _ => Ok(0u128.to_0x()),
             }
         })?;
 
@@ -362,11 +362,11 @@ impl MultivmServer {
             let helper = ctx.read().map_err(internal_error)?;
             let result = helper.node.contract_view(view);
             match result {
-                Ok(data) => {
+                Ok(Ok(data)) => {
                     let response: Vec<u8> = borsh::from_slice(&data).map_err(internal_error)?;
                     Ok(response.to_0x())
                 }
-                Err(_error) => Ok(0u128.to_0x()),
+                _ => Ok(0u128.to_0x()),
             }
         })?;
 
