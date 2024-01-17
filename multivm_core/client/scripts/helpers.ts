@@ -91,7 +91,7 @@ export async function deployAMMContract({
   address: string;
   signer: HardhatEthersSigner | Wallet;
 }) {
-  await deploy_contract(mvmAddress, privateKey, toHexString(byteCode));
+  await deploy_contract(mvmAddress, "mvm", privateKey, toHexString(byteCode));
   return await ethers.getContractAt("AMM", address, signer);
 }
 
