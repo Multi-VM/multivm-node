@@ -56,6 +56,7 @@ pub struct Account {
     internal_id: u128,
     pub evm_address: EvmAddress,
     pub multivm_account_id: Option<MultiVmAccountId>,
+    pub solana_address: Option<SolanaAddress>,
     pub executable: Option<Executable>,
     pub balance: u128,
     pub nonce: u64,
@@ -65,10 +66,19 @@ pub struct Account {
 pub enum Executable {
     Evm(),
     MultiVm(MultiVmExecutable),
+    Solana(SolanaExecutable),
 }
+
+#[derive(Debug, BorshSerialize, BorshDeserialize, Clone)]
+pub struct SolanaAddress([u8; 32]);
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub struct MultiVmExecutable {
+    pub image_id: [u32; 8],
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
+pub struct SolanaExecutable {
     pub image_id: [u32; 8],
 }
 
