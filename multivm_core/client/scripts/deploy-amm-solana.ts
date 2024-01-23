@@ -17,16 +17,14 @@ import {
   SolanaAmmStateSchema,
   bigintToBeBytes,
   SolanaAmmPoolSchema,
-  SolanaAmmTokenSchema
+  SolanaAmmTokenSchema,
 } from "./utils";
 import { deserialize, serialize } from "borsh";
 
-const AMM_CONTRACT_SRC =
-  "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/solana_amm";
+const AMM_CONTRACT_SRC = "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/solana_amm";
 const bytecode = fs.readFileSync(AMM_CONTRACT_SRC);
 // 2 account
-const privateKey =
-  "afdfd9c3d2095ef696594f6cedcae59e72dcd697e2a7521b1578140422a4f890";
+const privateKey = "afdfd9c3d2095ef696594f6cedcae59e72dcd697e2a7521b1578140422a4f890";
 const signer = new ethers.SigningKey("0x" + privateKey);
 const owner = new ethers.Wallet(signer, ethers.provider);
 
@@ -45,18 +43,11 @@ async function main() {
   console.log("\nDeploying tokens...");
   const TOKEN = await ethers.getContractFactory("Token");
 
-  const token1 = await TOKEN.connect(owner).deploy(
-    "Token1",
-    "TKN1",
-    parseEther(String(1_000_000))
-  );
+  const token1 = await TOKEN.connect(owner).deploy("Token1", "TKN1", parseEther(String(1_000_000)));
   const token1Address = await token1.getAddress();
+  token1.transfer("0x121348F398681B4d021826EB6423805df7CD25D9", parseEther(String(1_000)));
 
-  const token2 = await TOKEN.connect(owner).deploy(
-    "Token2",
-    "TKN2",
-    parseEther(String(1_000_000))
-  );
+  const token2 = await TOKEN.connect(owner).deploy("Token2", "TKN2", parseEther(String(1_000_000)));
   const token2Address = await token2.getAddress();
 
   console.log("Tokens deployed:");
@@ -66,11 +57,7 @@ async function main() {
   console.log("\nDeploying Solana AMM contract...");
   await deploy_contract("solana_amm.multivm", "svm", privateKey, toHexString(bytecode));
 
-  const amm = await ethers.getContractAt(
-    "AMM",
-    await owner.getAddress(),
-    owner
-  );
+  const amm = await ethers.getContractAt("AMM", await owner.getAddress(), owner);
 
   console.log(`AMM deployed`, await amm.getAddress());
 
@@ -97,15 +84,14 @@ async function main() {
     });
     console.dir(init);
     console.log(` ——[init] ready!`);
-
   }
 
   const state_account_data = (await solana_data(program_id.toBase58(), state_account_id.toBase58()))["result"];
   const state = deserialize(SolanaAmmStateSchema, state_account_data);
-  console.log(state)
+  console.log(state);
   const pool_id = state["next_pool_id"];
-  const pool_id_bytes = bigintToBeBytes(pool_id, 16)
-  console.log(pool_id)
+  const pool_id_bytes = bigintToBeBytes(pool_id, 16);
+  console.log(pool_id);
 
   const [pool_state_account_id] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
 
@@ -117,7 +103,7 @@ async function main() {
       add_pool: {
         token0: token1Address,
         token1: token2Address,
-      }
+      },
     });
     const add_pool = await owner.sendTransaction({
       to: amm,
@@ -135,10 +121,9 @@ async function main() {
 
     const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
     const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
-    console.log(pool_state)
+    console.log(pool_state);
   }
   console.log(` ——[add_pool] ready!`);
-
 
   // ADD LIQUIDITY
   console.log(`\n —— [add_liquidity] send transaction...`);
@@ -146,9 +131,9 @@ async function main() {
   {
     const instruction_data = serialize(SolanaAmmSchema, {
       add_liquidity: {
-        amount0: 100,
-        amount1: 20_000,
-      }
+        amount0: parseEther(String(100)),
+        amount1: parseEther(String(20_000)),
+      },
     });
     const add_liquidity = await owner.sendTransaction({
       to: amm,
@@ -166,19 +151,18 @@ async function main() {
 
     const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
     const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
-    console.log(pool_state)
+    console.log(pool_state);
   }
   console.log(` ——[add_liquidity] ready!`);
-
 
   // SWAP
   console.log(`\n —— [swap] send transaction...`);
   {
     const instruction_data = serialize(SolanaAmmSchema, {
       swap: {
-        amount0_in: 1,
+        amount0_in: parseEther(String(1)),
         amount1_in: 0,
-      }
+      },
     });
     const swap = await owner.sendTransaction({
       to: amm,
@@ -196,7 +180,7 @@ async function main() {
 
     const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
     const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
-    console.log(pool_state)
+    console.log(pool_state);
   }
   console.log(` —[swap] ready!`);
 }
