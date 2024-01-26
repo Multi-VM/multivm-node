@@ -4,7 +4,16 @@ import { formatEther, parseEther } from "ethers";
 import { GetPoolsSchema, view } from "./utils";
 import { deserialize } from "borsh";
 import { Token, AMM } from "../typechain-types/contracts";
-import { ammContractAddLiquidity, ammContractAddPool, ammContractInit, ammContractRemoveLiquidity, ammContractSwap, createUserSafe, deployAMMContract, deployTokenContract } from "./helpers";
+import {
+  createUserSafe,
+  deployRustAMMContract,
+  deployTokenContract,
+  rustAmmContractAddLiquidity,
+  rustAmmContractAddPool,
+  rustAmmContractInit,
+  rustAmmContractRemoveLiquidity,
+  rustAmmContractSwap,
+} from "./helpers";
 
 const AMM_CONTRACT_SRC = "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/amm";
 const bytecode = fs.readFileSync(AMM_CONTRACT_SRC);
@@ -79,38 +88,38 @@ async function main() {
 
   async function deployAMM() {
     console.log("\nDeploying AMM contract...");
-    ammContract = await deployAMMContract({ mvmAddress: "amm.multivm", privateKey: ammPrivateKey, byteCode: bytecode, address: amm.address, signer: amm });
+    ammContract = await deployRustAMMContract({ mvmAddress: "amm.multivm", privateKey: ammPrivateKey, byteCode: bytecode, address: amm.address, signer: amm });
     console.log(`AMM deployed`, await ammContract.getAddress());
   }
 
   async function ammInit() {
     console.log(`\n —— [init] send transaction...`);
-    await ammContractInit({ contract: ammContract, signer: owner });
+    await rustAmmContractInit({ contract: ammContract, signer: owner });
     console.log(` —— [init] ready!`);
   }
 
   async function ammAddPool(t0Address: string, t1Address: string) {
     console.log(`\n —— [add_pool] send transaction...`);
-    await ammContractAddPool({ token0: t0Address, token1: t1Address, contract: ammContract, signer: owner });
+    await rustAmmContractAddPool({ token0: t0Address, token1: t1Address, contract: ammContract, signer: owner });
     console.log(` —— [add_pool] ready!`);
   }
 
   async function ammAddLiquidity(poolId: number, am0: number, am1: number) {
     console.log(`\n —— [add_liquidity] send transaction...`);
-    await ammContractAddLiquidity({ poolId: poolId, amount0: am0, amount1: am1, contract: ammContract, signer: owner });
+    await rustAmmContractAddLiquidity({ poolId: poolId, amount0: am0, amount1: am1, contract: ammContract, signer: owner });
     console.log(` —— [add_liquidity] ready!`);
   }
 
   async function ammRemoveLiquidity(poolId: number) {
     console.log(`\n —— [remove_liquidity] send transaction...`);
-    await ammContractRemoveLiquidity({ poolId: poolId, contract: ammContract, signer: owner });
+    await rustAmmContractRemoveLiquidity({ poolId: poolId, contract: ammContract, signer: owner });
     console.log(` —— [remove_liquidity] ready!`);
   }
 
   async function ammSwap(poolId: number, am0In: number, am1In: number) {
     console.log(`\n —— [swap] send transaction...`);
     //! signer = user
-    await ammContractSwap({ poolId: poolId, amount0_in: am0In, amount1_in: am1In, contract: ammContract, signer: user });
+    await rustAmmContractSwap({ poolId: poolId, amount0_in: am0In, amount1_in: am1In, contract: ammContract, signer: user });
     console.log(` —— [swap] ready!`);
   }
 

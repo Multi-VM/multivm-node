@@ -1,25 +1,8 @@
 import fs from "fs";
-import { ethers, network } from "hardhat";
+import { ethers } from "hardhat";
 import { parseEther } from "ethers";
-import * as solanaWeb3 from "@solana/web3.js";
-import {
-  addPoolArgs,
-  SolanaContextSchema,
-  create_account,
-  deploy_contract,
-  solana_data,
-  initArgs,
-  toHexString,
-  transactionSchema,
-  view,
-  accountInfo,
-  SolanaAmmSchema,
-  SolanaAmmStateSchema,
-  bigintToBeBytes,
-  SolanaAmmPoolSchema,
-  SolanaAmmTokenSchema,
-} from "./utils";
-import { deserialize, serialize } from "borsh";
+import { Token, AMM } from "../typechain-types/contracts";
+import { createUserSafe, deploySvmAMMContract, deployTokenContract, svmAmmContractAddLiquidity, svmAmmContractAddPool, svmAmmContractInit, svmAmmContractSwap, svmAmmPoolsMetaData } from "./helpers";
 
 const AMM_CONTRACT_SRC = "../../example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/solana_amm";
 const bytecode = fs.readFileSync(AMM_CONTRACT_SRC);
@@ -28,164 +11,90 @@ const privateKey = "afdfd9c3d2095ef696594f6cedcae59e72dcd697e2a7521b1578140422a4
 const signer = new ethers.SigningKey("0x" + privateKey);
 const owner = new ethers.Wallet(signer, ethers.provider);
 
+// AMM
+let ammContract: AMM;
+
+// Token related
+const tokensSupplyAmount = parseEther(String(1_000_000));
+const transferAmount = parseEther(String(1_000));
+let token1: Token;
+let token2: Token;
+let token1Address: string;
+let token2Address: string;
+
 async function main() {
-  const chainId = parseInt(await network.provider.send("eth_chainId"));
-
-  console.log("Chain ID:", chainId);
-
-  // !You need to create user with this alias first
-  console.log("\nCreating solana amm account...");
-  await create_account(`solana_amm.multivm`, owner.address);
-
-  console.log("Solana amm contract created!");
-  console.log(`solana_amm.multivm`, owner.address);
-
-  console.log("\nDeploying tokens...");
-  const TOKEN = await ethers.getContractFactory("Token");
-
-  const token1 = await TOKEN.connect(owner).deploy("Token1", "TKN1", parseEther(String(1_000_000)));
-  const token1Address = await token1.getAddress();
-  token1.transfer("0x121348F398681B4d021826EB6423805df7CD25D9", parseEther(String(1_000)));
-
-  const token2 = await TOKEN.connect(owner).deploy("Token2", "TKN2", parseEther(String(1_000_000)));
-  const token2Address = await token2.getAddress();
-
-  console.log("Tokens deployed:");
-  console.log(token1Address);
-  console.log(token2Address);
-
-  console.log("\nDeploying Solana AMM contract...");
-  await deploy_contract("solana_amm.multivm", "svm", privateKey, toHexString(bytecode));
-
-  const amm = await ethers.getContractAt("AMM", await owner.getAddress(), owner);
-  const ammAddress = await amm.getAddress();
-  console.log(`AMM deployed`, ammAddress);
-
-  await token1.approve(ammAddress, parseEther(String(1_000_000)));
-  await token2.approve(ammAddress, parseEther(String(1_000_000)));
-
-  const program_id = new solanaWeb3.PublicKey((await accountInfo("solana_amm.multivm"))["result"]["solana_address"]);
-  const owner_solana_id = new solanaWeb3.PublicKey((await accountInfo(owner.address))["result"]["solana_address"]);
-
-  console.log(`\n —— [init] send transaction...`);
-  const [state_account_id, _] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("state")], program_id);
-  {
-    const instruction_data = new Uint8Array([0]);
-    // const instruction_data = serialize(SolanaAmmSchema, {
-    // });
-    const init = await owner.sendTransaction({
-      to: amm,
-      data: serialize(transactionSchema, {
-        method: "init",
-        args: serialize(SolanaContextSchema, {
-          accounts: [owner_solana_id.toBytes(), state_account_id.toBytes()],
-          instruction_data: instruction_data,
-        }),
-        gas: BigInt(300_000),
-        deposit: BigInt(0),
-      }),
-    });
-    console.dir(init);
-    console.log(` ——[init] ready!`);
+  async function createAccounts() {
+    // !You need to create user with this alias first
+    console.log("\nCreating users...");
+    await createUserSafe("solana_amm.multivm", owner.address);
+    console.table([{ name: "solana_amm.multivm", address: owner.address }]);
   }
 
-  const state_account_data = (await solana_data(program_id.toBase58(), state_account_id.toBase58()))["result"];
-  const state = deserialize(SolanaAmmStateSchema, state_account_data);
-  console.log(state);
-  const pool_id = state["next_pool_id"];
-  const pool_id_bytes = bigintToBeBytes(pool_id, 16);
-  console.log(pool_id);
+  async function deployTokens() {
+    console.log("\nDeploying & Approving tokens...");
+    token1 = await deployTokenContract({ name: "Token 1", symbol: "TKN1", supply: tokensSupplyAmount, signer: owner });
+    token1Address = await token1.getAddress();
+    await token1.approve(owner.address, tokensSupplyAmount);
 
-  const [pool_state_account_id] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
+    token2 = await deployTokenContract({ name: "Token 1", symbol: "TKN1", supply: tokensSupplyAmount, signer: owner });
+    token2Address = await token2.getAddress();
+    await token2.approve(owner.address, tokensSupplyAmount);
+    console.log([token1Address, token2Address]);
+  }
 
-  // ADD POOL
-  {
+  async function transferTokens() {
+    console.log("\nTransfer token1 from owner to user...");
+    await token1.connect(owner).transfer("0x121348F398681B4d021826EB6423805df7CD25D9", transferAmount);
+  }
+
+  async function deployAMM() {
+    console.log("\nDeploying AMM contract...");
+    ammContract = await deploySvmAMMContract({ mvmAddress: "solana_amm.multivm", privateKey: privateKey, byteCode: bytecode, address: owner.address, signer: owner });
+    console.log(`AMM deployed`, await ammContract.getAddress());
+  }
+
+  async function ammInit() {
+    console.log(`\n —— [init] send transaction...`);
+    await svmAmmContractInit({
+      contract: ammContract,
+      signer: owner,
+    });
+    console.log(` —— [init] ready!`);
+  }
+
+  async function ammAddPool(t0Address: string, t1Address: string) {
     console.log(`\n —— [add_pool] send transaction...`);
-
-    const instruction_data = serialize(SolanaAmmSchema, {
-      add_pool: {
-        token0: token1Address,
-        token1: token2Address,
-      },
-    });
-    const add_pool = await owner.sendTransaction({
-      to: amm,
-      data: serialize(transactionSchema, {
-        method: "",
-        args: serialize(SolanaContextSchema, {
-          accounts: [owner_solana_id.toBytes(), state_account_id.toBytes(), pool_state_account_id.toBytes()],
-          instruction_data: instruction_data,
-        }),
-        gas: BigInt(300_000),
-        deposit: BigInt(0),
-      }),
-    });
-    console.dir(add_pool);
-
-    const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
-    const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
-    console.log(pool_state);
+    await svmAmmContractAddPool({ token0: t0Address, token1: t1Address, contract: ammContract, signer: owner });
+    console.log(` —— [add_pool] ready!`);
   }
-  console.log(` ——[add_pool] ready!`);
 
-  // ADD LIQUIDITY
-  console.log(`\n —— [add_liquidity] send transaction...`);
-  const [user_pool_shares_account_id] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("user_pool_shares"), owner_solana_id.toBytes(), pool_id_bytes], program_id);
-  {
-    const instruction_data = serialize(SolanaAmmSchema, {
-      add_liquidity: {
-        amount0: parseEther(String(100)),
-        amount1: parseEther(String(20_000)),
-      },
-    });
-    const add_liquidity = await owner.sendTransaction({
-      to: amm,
-      data: serialize(transactionSchema, {
-        method: "",
-        args: serialize(SolanaContextSchema, {
-          accounts: [owner_solana_id.toBytes(), pool_state_account_id.toBytes(), user_pool_shares_account_id.toBytes()],
-          instruction_data: instruction_data,
-        }),
-        gas: BigInt(300_000),
-        deposit: BigInt(0),
-      }),
-    });
-    console.dir(add_liquidity);
-
-    const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
-    const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
-    console.log(pool_state);
+  async function ammAddLiquidity(poolId: number, am0: number, am1: number) {
+    console.log(`\n —— [add_liquidity] send transaction...`);
+    await svmAmmContractAddLiquidity({ poolId: poolId, amount0: am0, amount1: am1, contract: ammContract, signer: owner });
+    console.log(` —— [add_liquidity] ready!`);
   }
-  console.log(` ——[add_liquidity] ready!`);
 
-  // SWAP
-  console.log(`\n —— [swap] send transaction...`);
-  {
-    const instruction_data = serialize(SolanaAmmSchema, {
-      swap: {
-        amount0_in: parseEther(String(1)),
-        amount1_in: 0,
-      },
-    });
-    const swap = await owner.sendTransaction({
-      to: amm,
-      data: serialize(transactionSchema, {
-        method: "",
-        args: serialize(SolanaContextSchema, {
-          accounts: [owner_solana_id.toBytes(), pool_state_account_id.toBytes()],
-          instruction_data: instruction_data,
-        }),
-        gas: BigInt(300_000),
-        deposit: BigInt(0),
-      }),
-    });
-    console.dir(swap);
-
-    const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
-    const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
-    console.log(pool_state);
+  async function ammSwap(poolId: number, am0In: number, am1In: number) {
+    console.log(`\n —— [swap] send transaction...`);
+    //! signer = user
+    await svmAmmContractSwap({ poolId: poolId, amount0_in: am0In, amount1_in: am1In, contract: ammContract, signer: owner });
+    console.log(` —— [swap] ready!`);
   }
-  console.log(` —[swap] ready!`);
+
+  async function ammPoolState(poolId: number) {
+    const poolState = await svmAmmPoolsMetaData({ poolId: poolId, contract: ammContract });
+    console.info(poolState);
+  }
+
+  await createAccounts();
+  await deployTokens();
+  await transferTokens();
+  await deployAMM();
+  await ammInit();
+  await ammAddPool(token1Address, token2Address);
+  await ammAddLiquidity(1, 100, 20_000);
+  await ammSwap(1, 1, 0);
+  await ammPoolState(1);
 }
 
 main()

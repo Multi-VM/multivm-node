@@ -1,7 +1,13 @@
 import { Wallet, formatEther, parseEther } from "ethers";
 import {
+  SolanaAmmPoolSchema,
+  SolanaAmmSchema,
+  SolanaAmmStateSchema,
+  SolanaContextSchema,
+  accountInfo,
   addLiquidityArgs,
   addPoolArgs,
+  bigintToBeBytes,
   create_account,
   defaultDeposit,
   defaultGas,
@@ -9,6 +15,7 @@ import {
   get_balance,
   initArgs,
   removeLiquidityArgs,
+  solana_data,
   swapArgs,
   toHexString,
   transactionSchema,
@@ -16,7 +23,8 @@ import {
 import { ethers, network } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { AMM, WMVM } from "../typechain-types/contracts";
-import { serialize } from "borsh";
+import { deserialize, serialize } from "borsh";
+import { PublicKey } from "@solana/web3.js";
 
 export async function getChainMetadata() {
   const chainId = parseInt(await network.provider.send("eth_chainId"));
@@ -78,7 +86,7 @@ export async function deployTokenContract({
   return await contract.waitForDeployment();
 }
 
-export async function deployAMMContract({
+export async function deployRustAMMContract({
   mvmAddress,
   privateKey,
   byteCode,
@@ -97,7 +105,7 @@ export async function deployAMMContract({
 
 // gas: 0x5208,
 // data: Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("hex"),
-export async function ammContractInit({ contract, signer }: { contract: AMM; signer: HardhatEthersSigner | Wallet }) {
+export async function rustAmmContractInit({ contract, signer }: { contract: AMM; signer: HardhatEthersSigner | Wallet }) {
   const contractAddress = await contract.getAddress();
   const data = serialize(transactionSchema, {
     method: "init",
@@ -110,7 +118,7 @@ export async function ammContractInit({ contract, signer }: { contract: AMM; sig
   await initTx.wait();
 }
 
-export async function ammContractAddPool({ token0, token1, contract, signer }: { token0: string; token1: string; contract: AMM; signer: HardhatEthersSigner | Wallet }) {
+export async function rustAmmContractAddPool({ token0, token1, contract, signer }: { token0: string; token1: string; contract: AMM; signer: HardhatEthersSigner | Wallet }) {
   const contractAddress = await contract.getAddress();
   const data = serialize(transactionSchema, {
     method: "add_pool",
@@ -126,7 +134,7 @@ export async function ammContractAddPool({ token0, token1, contract, signer }: {
   await addPoolTx.wait();
 }
 
-export async function ammContractAddLiquidity({
+export async function rustAmmContractAddLiquidity({
   poolId,
   amount0,
   amount1,
@@ -155,7 +163,7 @@ export async function ammContractAddLiquidity({
   await addLiquidityTx.wait();
 }
 
-export async function ammContractRemoveLiquidity({ poolId, contract, signer }: { poolId: number; contract: AMM; signer: HardhatEthersSigner | Wallet }) {
+export async function rustAmmContractRemoveLiquidity({ poolId, contract, signer }: { poolId: number; contract: AMM; signer: HardhatEthersSigner | Wallet }) {
   const contractAddress = await contract.getAddress();
   const data = serialize(transactionSchema, {
     method: "remove_liquidity",
@@ -170,7 +178,7 @@ export async function ammContractRemoveLiquidity({ poolId, contract, signer }: {
   await removeLiquidityTx.wait();
 }
 
-export async function ammContractSwap({
+export async function rustAmmContractSwap({
   poolId,
   amount0_in,
   amount1_in,
@@ -197,4 +205,174 @@ export async function ammContractSwap({
 
   const swapTx = await signer.sendTransaction({ to: contractAddress, data: data });
   await swapTx.wait();
+}
+
+export async function deploySvmAMMContract({
+  mvmAddress,
+  privateKey,
+  byteCode,
+  address,
+  signer,
+}: {
+  mvmAddress: string;
+  privateKey: string;
+  byteCode: Buffer;
+  address: string;
+  signer: HardhatEthersSigner | Wallet;
+}) {
+  await deploy_contract(mvmAddress, "svm", privateKey, toHexString(byteCode));
+  return await ethers.getContractAt("AMM", address, signer);
+}
+
+export async function svmAmmContractInit({ contract, signer }: { contract: AMM; signer: HardhatEthersSigner | Wallet }) {
+  const contractAddress = await contract.getAddress();
+
+  const program_id = new PublicKey((await accountInfo(contractAddress))["result"]["solana_address"]);
+  const owner_solana_id = new PublicKey((await accountInfo(signer.address))["result"]["solana_address"]);
+  const [state_account_id, _] = PublicKey.findProgramAddressSync([Buffer.from("state")], program_id);
+
+  const data = serialize(transactionSchema, {
+    method: "init",
+    args: serialize(SolanaContextSchema, {
+      accounts: [owner_solana_id.toBytes(), state_account_id.toBytes()],
+      instruction_data: new Uint8Array([0]),
+    }),
+    gas: defaultGas,
+    deposit: defaultDeposit,
+  });
+
+  const initTx = await signer.sendTransaction({ to: contractAddress, data: data });
+  await initTx.wait();
+}
+
+export async function svmAmmContractAddPool({ token0, token1, contract, signer }: { token0: string; token1: string; contract: AMM; signer: HardhatEthersSigner | Wallet }) {
+  const contractAddress = await contract.getAddress();
+
+  const program_id = new PublicKey((await accountInfo(contractAddress))["result"]["solana_address"]);
+  const owner_solana_id = new PublicKey((await accountInfo(signer.address))["result"]["solana_address"]);
+  const [state_account_id, _] = PublicKey.findProgramAddressSync([Buffer.from("state")], program_id);
+  const state_account_data = (await solana_data(program_id.toBase58(), state_account_id.toBase58()))["result"];
+  const state = deserialize(SolanaAmmStateSchema, state_account_data);
+  const pool_id = state["next_pool_id"];
+  const pool_id_bytes = bigintToBeBytes(pool_id, 16);
+  const [pool_state_account_id] = PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
+
+  const instruction_data = serialize(SolanaAmmSchema, {
+    add_pool: {
+      token0: token0,
+      token1: token1,
+    },
+  });
+
+  const data = serialize(transactionSchema, {
+    method: "add_pool",
+    args: serialize(SolanaContextSchema, {
+      accounts: [owner_solana_id.toBytes(), state_account_id.toBytes(), pool_state_account_id.toBytes()],
+      instruction_data: instruction_data,
+    }),
+    gas: defaultGas,
+    deposit: defaultDeposit,
+  });
+
+  const addPoolTx = await signer.sendTransaction({ to: contractAddress, data: data });
+  await addPoolTx.wait();
+}
+
+export async function svmAmmContractAddLiquidity({
+  poolId,
+  amount0,
+  amount1,
+  contract,
+  signer,
+}: {
+  poolId: number;
+  amount0: number;
+  amount1: number;
+  contract: AMM;
+  signer: HardhatEthersSigner | Wallet;
+}) {
+  const contractAddress = await contract.getAddress();
+
+  const program_id = new PublicKey((await accountInfo(contractAddress))["result"]["solana_address"]);
+  const owner_solana_id = new PublicKey((await accountInfo(signer.address))["result"]["solana_address"]);
+
+  const pool_id_bytes = bigintToBeBytes(BigInt(poolId), 16);
+  const [pool_state_account_id] = PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
+  const [user_pool_shares_account_id] = PublicKey.findProgramAddressSync([Buffer.from("user_pool_shares"), owner_solana_id.toBytes(), pool_id_bytes], program_id);
+
+  const instruction_data = serialize(SolanaAmmSchema, {
+    add_liquidity: {
+      amount0: parseEther(String(amount0)),
+      amount1: parseEther(String(amount1)),
+    },
+  });
+
+  const data = serialize(transactionSchema, {
+    method: "add_liquidity",
+    args: serialize(SolanaContextSchema, {
+      accounts: [owner_solana_id.toBytes(), pool_state_account_id.toBytes(), user_pool_shares_account_id.toBytes()],
+      instruction_data: instruction_data,
+    }),
+    gas: defaultGas,
+    deposit: defaultDeposit,
+  });
+
+  const addLiquidityTx = await signer.sendTransaction({ to: contractAddress, data: data });
+  await addLiquidityTx.wait();
+}
+
+export async function svmAmmContractSwap({
+  poolId,
+  amount0_in,
+  amount1_in,
+  contract,
+  signer,
+}: {
+  poolId: number;
+  amount0_in: number;
+  amount1_in: number;
+  contract: AMM;
+  signer: HardhatEthersSigner | Wallet;
+}) {
+  const contractAddress = await contract.getAddress();
+
+  const program_id = new PublicKey((await accountInfo(contractAddress))["result"]["solana_address"]);
+  const owner_solana_id = new PublicKey((await accountInfo(signer.address))["result"]["solana_address"]);
+
+  const pool_id_bytes = bigintToBeBytes(BigInt(poolId), 16);
+  const [pool_state_account_id] = PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
+
+  const instruction_data = serialize(SolanaAmmSchema, {
+    swap: {
+      amount0_in: parseEther(String(amount0_in)),
+      amount1_in: parseEther(String(amount1_in)),
+    },
+  });
+
+  const data = serialize(transactionSchema, {
+    method: "swap",
+    args: serialize(SolanaContextSchema, {
+      accounts: [owner_solana_id.toBytes(), pool_state_account_id.toBytes()],
+      instruction_data: instruction_data,
+    }),
+    gas: defaultGas,
+    deposit: defaultDeposit,
+  });
+
+  const swapTx = await signer.sendTransaction({ to: contractAddress, data: data });
+  await swapTx.wait();
+}
+
+export async function svmAmmPoolsMetaData({ poolId, contract }: { poolId: number; contract: AMM }) {
+  const contractAddress = await contract.getAddress();
+
+  const program_id = new PublicKey((await accountInfo(contractAddress))["result"]["solana_address"]);
+
+  const pool_id_bytes = bigintToBeBytes(BigInt(poolId), 16);
+  const [pool_state_account_id] = PublicKey.findProgramAddressSync([Buffer.from("pool"), pool_id_bytes], program_id);
+
+  const pool_state_data = (await solana_data(program_id.toBase58(), pool_state_account_id.toBase58()))["result"];
+  const pool_state = deserialize(SolanaAmmPoolSchema, pool_state_data);
+
+  return pool_state;
 }

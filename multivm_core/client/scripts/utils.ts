@@ -63,9 +63,7 @@ export async function view(account: string, method: string, args: any) {
 }
 
 export async function accountInfo(accountId: string) {
-  return await call("mvm_accountInfo", [
-    accountId,
-  ]);
+  return await call("mvm_accountInfo", [accountId]);
 }
 
 export async function get_balance(address: string) {
@@ -90,10 +88,7 @@ export async function deploy_contract(mvm: string, contractType: String, private
 }
 
 export async function solana_data(contract_address: string, storage_address: string) {
-  return await call("svm_accountData", [
-    contract_address,
-    storage_address,
-  ]);
+  return await call("svm_accountData", [contract_address, storage_address]);
 }
 
 export const toHexString = (byteArray: Buffer) => Array.from(byteArray, (byte) => ("0" + (byte & 0xff).toString(16)).slice(-2)).join("");
@@ -170,14 +165,14 @@ export const SolanaContextSchema = {
             type: "u8",
             len: 32,
           },
-        }
+        },
       },
     },
     instruction_data: {
       array: {
-        type: "u8"
-      }
-    }
+        type: "u8",
+      },
+    },
   },
 };
 
@@ -187,19 +182,19 @@ export const SolanaAmmSchema = {
       struct: {
         init: {
           struct: {
-            phantom: "bool"
-          }
-        }
-      }
+            phantom: "bool",
+          },
+        },
+      },
     },
     {
       struct: {
         add_pool: {
           struct: {
             token0: "string",
-            token1: "string"
-          }
-        }
+            token1: "string",
+          },
+        },
       },
     },
     {
@@ -207,18 +202,18 @@ export const SolanaAmmSchema = {
         add_liquidity: {
           struct: {
             amount0: "u128",
-            amount1: "u128"
-          }
-        }
+            amount1: "u128",
+          },
+        },
       },
     },
     {
       struct: {
         remove_liquidity: {
           struct: {
-            phantom: "bool"
-          }
-        }
+            phantom: "bool",
+          },
+        },
       },
     },
     {
@@ -227,25 +222,26 @@ export const SolanaAmmSchema = {
           struct: {
             amount0_in: "u128",
             amount1_in: "u128",
-          }
-        }
+          },
+        },
       },
-    }
-  ]
-}
+    },
+  ],
+};
 
 export const SolanaAmmStateSchema = {
   struct: {
     next_pool_id: "u128",
-  }
-}
+  },
+};
 
 export const SolanaAmmTokenSchema = {
   struct: {
     symbol: "string",
     address: "string",
-  }
-}
+    decimals: "u8",
+  },
+};
 
 export const SolanaAmmPoolSchema = {
   struct: {
@@ -255,5 +251,5 @@ export const SolanaAmmPoolSchema = {
     reserve0: "u128",
     reserve1: "u128",
     total_shares: "u128",
-  }
-}
+  },
+};
