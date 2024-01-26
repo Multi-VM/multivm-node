@@ -85,6 +85,9 @@ pub fn call_contract(
         u64::MAX,
         Vec::new(),
     );
+    if !reason.0.is_succeed() {
+        panic!("{:?}", reason.0);
+    }
 
     let s = executor.into_state();
     let (a, b) = s.deconstruct();

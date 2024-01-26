@@ -38,6 +38,7 @@ pub struct Pool {
 pub struct Token {
     pub symbol: String,
     pub address: String,
+    pub decimals: u8,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
@@ -156,8 +157,10 @@ pub fn add_pool(
     let token1 = multivm_sdk::multivm_primitives::EvmAddress::try_from(request.token1).unwrap();
 
     let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
-    let function = abi.function("symbol").unwrap();
-    let encoded_input = function.encode_input(&vec![]).unwrap();
+    let symbols_function = abi.function("symbol").unwrap();
+    let symbols_encoded_input = symbols_function.encode_input(&vec![]).unwrap();
+    let decimals_function = abi.function("decimals").unwrap();
+    let decimals_encoded_input = decimals_function.encode_input(&vec![]).unwrap();
 
     let tokens: Vec<Token> = [token0, token1]
         .iter()
@@ -166,21 +169,42 @@ pub fn add_pool(
                 address.clone().into(),
                 "symbol".to_string(),
                 0,
-                encoded_input.clone(),
+                symbols_encoded_input.clone(),
             );
             let response_bytes0: Vec<u8> =
                 borsh::from_slice(&commitment0.response.unwrap()).unwrap();
 
-            let symbol = function
+            let symbol = symbols_function
                 .decode_output(response_bytes0.as_slice())
                 .unwrap()
                 .first()
                 .unwrap()
                 .to_string();
 
+            let commitment1 = multivm_sdk::env::cross_contract_call_raw(
+                address.clone().into(),
+                "decimals".to_string(),
+                0,
+                decimals_encoded_input.clone(),
+            );
+            let response_bytes1: Vec<u8> =
+                borsh::from_slice(&commitment1.response.unwrap()).unwrap();
+
+            let decimals = decimals_function
+                .decode_output(response_bytes1.as_slice())
+                .unwrap()
+                .first()
+                .unwrap()
+                .clone()
+                .into_uint()
+                .unwrap()
+                .try_into()
+                .unwrap();
+
             Token {
                 symbol,
-                address: address.to_string(),
+                address: format!("0x{}", address.to_string()),
+                decimals,
             }
         })
         .collect();

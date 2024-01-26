@@ -58,8 +58,11 @@ async function main() {
   await deploy_contract("solana_amm.multivm", "svm", privateKey, toHexString(bytecode));
 
   const amm = await ethers.getContractAt("AMM", await owner.getAddress(), owner);
+  const ammAddress = await amm.getAddress();
+  console.log(`AMM deployed`, ammAddress);
 
-  console.log(`AMM deployed`, await amm.getAddress());
+  await token1.approve(ammAddress, parseEther(String(1_000_000)));
+  await token2.approve(ammAddress, parseEther(String(1_000_000)));
 
   const program_id = new solanaWeb3.PublicKey((await accountInfo("solana_amm.multivm"))["result"]["solana_address"]);
   const owner_solana_id = new solanaWeb3.PublicKey((await accountInfo(owner.address))["result"]["solana_address"]);
