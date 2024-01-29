@@ -244,6 +244,7 @@ export const SolanaAmmTokenSchema = {
   struct: {
     symbol: "string",
     address: "string",
+    decimals: "u8",
   }
 }
 
