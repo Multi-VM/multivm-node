@@ -1,6 +1,6 @@
 import fs from "fs";
 import { ethers, network } from "hardhat";
-import { parseEther } from "ethers";
+import { formatEther, parseEther } from "ethers";
 import * as solanaWeb3 from "@solana/web3.js";
 import {
   addPoolArgs,
@@ -60,6 +60,19 @@ async function main() {
   const amm = await ethers.getContractAt("AMM", await owner.getAddress(), owner);
   const ammAddress = await amm.getAddress();
   console.log(`AMM deployed`, ammAddress);
+
+  async function getTokenMetadata() {
+    console.log("\n -- [token_balances] loading...");
+    let ot1 = await token1.balanceOf(owner.address);
+    let ot2 = await token2.balanceOf(owner.address);
+    let ammt1 = await token1.balanceOf(ammAddress);
+    let ammt2 = await token2.balanceOf(ammAddress);
+    console.table([
+      { signer: "owner", token1: ot1, token2: ot2, token1_fmt: +formatEther(ot1), token2_fmt: +formatEther(ot2) },
+      { signer: "amm", token1: ammt1, token2: ammt2, token1_fmt: +formatEther(ammt1), token2_fmt: +formatEther(ammt2) },
+    ]);
+  }
+
 
   await token1.approve(ammAddress, parseEther(String(1_000_000)));
   await token2.approve(ammAddress, parseEther(String(1_000_000)));
@@ -128,6 +141,8 @@ async function main() {
   }
   console.log(` ——[add_pool] ready!`);
 
+  await getTokenMetadata();
+
   // ADD LIQUIDITY
   console.log(`\n —— [add_liquidity] send transaction...`);
   const [user_pool_shares_account_id] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from("user_pool_shares"), owner_solana_id.toBytes(), pool_id_bytes], program_id);
@@ -157,6 +172,10 @@ async function main() {
     console.log(pool_state);
   }
   console.log(` ——[add_liquidity] ready!`);
+
+  await getTokenMetadata();
+
+  return;
 
   // SWAP
   console.log(`\n —— [swap] send transaction...`);
