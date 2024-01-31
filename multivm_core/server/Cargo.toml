@@ -12,14 +12,15 @@ multivm_runtime = { path = "../runtime" }
 multivm_primitives = { path = "../primitives" }
 playgrounds = { path = "../playgrounds" }
 
-anyhow.workspace = true
+#anyhow.workspace = true
 borsh.workspace = true
 
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0.171", features = ["derive"] }
 serde_json = "1.0.103"
-tracing = "0.1.36"
-tracing-subscriber = { version = "0.3.3", features = ["env-filter"] }
+tracing = "0.1.40"
+tracing-error = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 jsonrpsee = { version = "0.19.0", features = ["full"] }
 tower-http = { version = "0.4.0", features = ["full"] }
 tower = { version = "0.4.13", features = ["full"] }
@@ -32,3 +33,13 @@ ethers-core = "2.0.10"
 lazy_static = "1.4.0"
 clap = { version = "4.4.10", features = ["derive"] }
 rand = "0.8"
+async-graphql = "7.0"
+async-graphql-poem = "7.0"
+poem = "2.0"
+sqlx = { version = "0.7", features = [ "runtime-tokio", "sqlite", "migrate" ] }
+risc0-zkvm = { version = "0.19.0" }
+chrono = { version = "0.4" }
+base64 = "0.21.7"
+async-recursion = "1.0.5"
+color-eyre = "0.6.2"
+futures = "0.3.30"

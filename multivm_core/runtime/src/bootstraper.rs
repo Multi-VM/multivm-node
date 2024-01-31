@@ -8,7 +8,8 @@ use multivm_primitives::{
         CrossContractCallRequest, DeployContractRequest, GetStorageResponse, SetStorageRequest,
         CROSS_CONTRACT_CALL, DEPLOY_CONTRACT_CALL, GET_STORAGE_CALL, SET_STORAGE_CALL,
     },
-    AccountId, Attachments, ContractCallContext, EnvironmentContext, SupportedTransaction,
+    AccountId, Attachments, ContractCall, ContractCallContext, EnvironmentContext,
+    SupportedTransaction,
 };
 
 use crate::{
@@ -93,7 +94,13 @@ impl Bootstraper {
 
         let session = exec.execute(env, image).unwrap();
 
-        ExecutionOutcome::new(session, 0, self.cross_calls_outcomes.take())
+        ExecutionOutcome::new(
+            session,
+            ContractCall::new_raw(String::from("TODO_METHOD_NAME"), Vec::default(), 0, 0),
+            AccountId::system_meta_contract(),
+            0,
+            self.cross_calls_outcomes.take(),
+        )
     }
 
     pub fn callback_on_contract_deployment<'a>(

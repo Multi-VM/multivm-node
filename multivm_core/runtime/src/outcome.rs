@@ -1,7 +1,9 @@
-use multivm_primitives::Commitment;
+use multivm_primitives::{AccountId, Commitment, ContractCall, Receipt};
 
 pub struct ExecutionOutcome {
     pub session_info: risc0_zkvm::SessionInfo,
+    pub contract_call: ContractCall,
+    pub contract_id: AccountId,
     pub commitment: Commitment,
     pub gas_used: u64,
     pub cross_calls_outcomes: Vec<ExecutionOutcome>,
@@ -10,6 +12,8 @@ pub struct ExecutionOutcome {
 impl ExecutionOutcome {
     pub fn new(
         session_info: risc0_zkvm::SessionInfo,
+        contract_call: ContractCall,
+        contract_id: AccountId,
         gas_used: u64,
         cross_calls_outcomes: Vec<ExecutionOutcome>,
     ) -> Self {
@@ -17,9 +21,28 @@ impl ExecutionOutcome {
             .expect("Corrupted journal");
         Self {
             session_info,
+            contract_call,
+            contract_id,
             commitment,
             gas_used,
             cross_calls_outcomes,
+        }
+    }
+
+    pub fn receipts(&self) -> Receipt {
+        let cross_calls_receipts = self
+            .cross_calls_outcomes
+            .iter()
+            .map(|outcome| outcome.receipts())
+            .collect();
+
+        Receipt {
+            contract_id: self.contract_id.clone(),
+            gas_used: self.gas_used,
+            cross_calls_receipts,
+            response: self.commitment.response.clone(),
+            events: self.commitment.events.clone(),
+            call: self.contract_call.clone(),
         }
     }
 

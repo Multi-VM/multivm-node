@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use multivm_primitives::{Block, Commitment, Digest, SupportedTransaction};
+use multivm_primitives::{Block, Digest, SupportedTransaction};
 use tracing::info;
 
 use crate::outcome::ExecutionOutcome;
@@ -19,13 +19,12 @@ pub struct UnprovedBlock {
 impl UnprovedBlock {
     // TODO: prove block with zk
     pub fn prove(self, skip_proof: bool) -> Block {
-        let call_outputs: HashMap<_, _> = self
+        let receipts: HashMap<_, _> = self
             .execution_outcomes
             .iter()
             .map(|(hash, outcome)| {
-                let response = if skip_proof {
-                    outcome.commitment.response.clone()
-                } else {
+                if !skip_proof 
+                {
                         let methods = match self
                             .txs
                             .iter()
@@ -42,33 +41,24 @@ impl UnprovedBlock {
                         let start = std::time::Instant::now();
 
                         info!(tx_hash = ?eth_primitive_types::H256::from(hash), methods = ?methods, "Proving outcome...");
-                        let outcome = outcome.prove_all();
+                        let _outcome = outcome.prove_all();
                         info!(
                             tx_hash = ?eth_primitive_types::H256::from(hash),
                             methods = ?methods,
                             duration = ?start.elapsed(),
                             "Outcome proved",
                         );
-                        outcome.commitment.response
                 };
+                
+                let receipt = outcome.receipts();
 
-                let tx = self
-                    .txs
-                    .iter()
-                    .find(|tx| tx.hash() == *hash)
-                    .unwrap();
-
-                let response = if tx.to_system()
-                {
-                    response.clone()
-                } else {
-                    let commitment =
-                        Commitment::try_from_bytes(response.clone().unwrap()).unwrap();
-                    commitment.response
-                };
-
-                (hash.clone(), response)
+                (hash.clone(), receipt)
             })
+            .collect();
+
+        let call_outputs = receipts
+            .iter()
+            .map(|(hash, commitment)| (hash.clone(), commitment.response.clone()))
             .collect();
 
         Block {
@@ -80,6 +70,7 @@ impl UnprovedBlock {
             timestamp: self.timestamp,
             txs: self.txs,
             call_outputs,
+            receipts,
         }
     }
 }

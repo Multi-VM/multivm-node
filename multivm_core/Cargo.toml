@@ -4,7 +4,7 @@ members = [
     "runtime",
     "meta_contracts",
     "playgrounds",
-    "rpc",
+    "server",
 ]
 resolver = "2"
 

@@ -93,6 +93,8 @@ impl Executor {
 
         Ok(ExecutionOutcome::new(
             session,
+            self.context.contract_call,
+            self.context.contract_id,
             0,
             self.cross_calls_outcomes.take(),
         ))

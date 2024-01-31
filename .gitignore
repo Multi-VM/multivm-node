@@ -2,6 +2,7 @@
 **/.direnv
 **/.envrc
 **/.vscode
+*.db
 
 .DS_Store
 /multivm_core/state

@@ -328,6 +328,43 @@ pub type StorageKey = String;
 
 pub type ContractResponse = Result<Vec<u8>, ContractError>;
 
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
+    Ord,
+)]
+pub enum Event {
+    System(SystemEvent),
+    Contract(Vec<u8>),
+}
+
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Eq,
+    Ord,
+)]
+pub enum SystemEvent {
+    AccountCreated(EvmAddress, Option<MultiVmAccountId>, SolanaAddress),
+    ContractDeployed(AccountId),
+    BalanceChanged(AccountId, u128),
+}
+
 /// Outcome of a contract call.
 #[derive(
     Serialize,
@@ -341,10 +378,10 @@ pub type ContractResponse = Result<Vec<u8>, ContractError>;
     PartialOrd,
     Eq,
 )]
-
 pub struct Commitment {
     pub call_hash: Digest,
     pub response: ContractResponse,
+    pub events: Vec<Event>,
     pub cross_calls_hashes: Vec<(Digest, Digest)>, // hashes of cross-calls (call, commitment)
     pub previous_account_root: Option<Digest>,
     pub new_account_root: Option<Digest>,
@@ -358,6 +395,16 @@ impl Commitment {
     pub fn into_bytes(&self) -> Vec<u8> {
         borsh::to_vec(&self).expect("Expected to serialize")
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct Receipt {
+    pub contract_id: AccountId,
+    pub call: ContractCall,
+    pub response: ContractResponse,
+    pub gas_used: u64,
+    pub events: Vec<Event>,
+    pub cross_calls_receipts: Vec<Receipt>,
 }
 
 #[derive(
@@ -485,6 +532,43 @@ impl SupportedTransaction {
                 let (tx_request, _sig) = tx.decode();
                 let from = tx_request.from.unwrap();
                 AccountId::Evm(from.into())
+            }
+            Self::Solana(_) => todo!(),
+        }
+    }
+
+    pub fn receiver(&self) -> AccountId {
+        match self {
+            Self::MultiVm(tx) => tx.transaction.receiver_id.clone(),
+            Self::Evm(tx) => {
+                let (tx_request, _sig) = tx.decode();
+                let to = tx_request
+                    .to
+                    .map(|to| *to.as_address().unwrap())
+                    .unwrap_or(Default::default());
+                AccountId::Evm(to.into())
+            }
+            Self::Solana(_) => todo!(),
+        }
+    }
+
+    pub fn nonce(&self) -> u64 {
+        match self {
+            Self::MultiVm(tx) => tx.transaction.nonce,
+            Self::Evm(tx) => {
+                let (tx_request, _sig) = tx.decode();
+                tx_request.nonce.unwrap_or_default().as_u64()
+            }
+            Self::Solana(_) => todo!(),
+        }
+    }
+
+    pub fn deposit(&self) -> u128 {
+        match self {
+            Self::MultiVm(tx) => tx.transaction.calls.iter().map(|call| call.deposit).sum(),
+            Self::Evm(tx) => {
+                let (tx_request, _sig) = tx.decode();
+                tx_request.value.unwrap_or_default().as_u128()
             }
             Self::Solana(_) => todo!(),
         }
@@ -681,6 +765,7 @@ pub struct Block {
     pub timestamp: u64,
     pub txs: Vec<SupportedTransaction>,
     pub call_outputs: HashMap<Digest, ContractResponse>,
+    pub receipts: HashMap<Digest, Receipt>,
     // pub execution_outcomes: HashMap<Digest, ExecutionOutcome>,
     // pub sessions: HashMap<Digest, String>, // TODO: replace json to struct
 }

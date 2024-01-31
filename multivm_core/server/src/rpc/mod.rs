@@ -1,37 +1,45 @@
-use std::{collections::HashMap, str::FromStr, sync::RwLock};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
+use color_eyre::Result;
 use eth_primitive_types::H160;
 use ethers_core::k256::ecdsa::SigningKey;
 use hyper::Method;
-use jsonrpsee::RpcModule;
 use jsonrpsee::{
     server::Server,
     types::{error::ErrorCode, ErrorObject, ErrorObjectOwned},
 };
+use jsonrpsee::{server::ServerHandle, RpcModule};
 use lazy_static::lazy_static;
 use multivm_primitives::{
     AccountId, EthereumTransactionRequest, EvmAddress, MultiVmAccountId, SolanaAddress,
     SupportedTransaction,
 };
 use multivm_runtime::viewer::{EvmCall, SupportedView};
-use playgrounds::NodeHelper;
 use serde_json::json;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{debug, info, span, Level};
 
-use crate::utils::{EthBlockOutput, EthTransaction, EthTransactionReceipt, From0x, To0x};
+use utils::{EthBlockOutput, EthTransaction, EthTransactionReceipt, From0x, To0x};
+
+use crate::helper::NodeHelper;
+
+pub mod utils;
 
 static CHAIN_ID: u64 = 1044942;
 
 #[derive(Clone)]
-pub struct MultivmServer {}
+pub struct JsonRpcServer {}
 
-impl MultivmServer {
+impl JsonRpcServer {
     pub fn new() -> Self {
         Self {}
     }
 
-    pub async fn start(&self, db_path: Option<String>, port: u16) -> anyhow::Result<()> {
+    pub async fn start(&self, helper: Arc<RwLock<NodeHelper>>, port: u16) -> Result<ServerHandle> {
         let cors = CorsLayer::new()
             .allow_methods([Method::POST, Method::OPTIONS])
             .allow_origin(Any)
@@ -41,8 +49,7 @@ impl MultivmServer {
             .set_middleware(middleware)
             .build(format!("0.0.0.0:{}", port))
             .await?;
-        let helper = NodeHelper::new(db_path);
-        let mut module = RpcModule::new(RwLock::new(helper));
+        let mut module = RpcModule::new(helper);
 
         register_method(&mut module, "eth_chainId", |_, _| Ok(CHAIN_ID.to_0x()))?;
 
@@ -252,7 +259,7 @@ impl MultivmServer {
             let tx = SupportedTransaction::Evm(EthereumTransactionRequest::new(data));
             let hash = tx.hash();
             helper.node.add_tx(tx);
-            helper.node.produce_block(true);
+            // helper.produce_block(true);
 
             Ok(hash.to_0x())
         })?;
@@ -285,7 +292,7 @@ impl MultivmServer {
                     "account created"
                 );
             }
-            helper.node.produce_block(true);
+            //helper.node.produce_block(true);
             Ok(address.to_string())
         })?;
 
@@ -314,7 +321,7 @@ impl MultivmServer {
 
             let mut helper = ctx.write().map_err(internal_error)?;
             helper.deploy_contract_with_key(&account_id, contract_type, bytecode, sk);
-            helper.produce_block(true);
+            //helper.produce_block(true);
 
             Ok("0x0")
         })?;
@@ -412,9 +419,7 @@ impl MultivmServer {
         let handle = server.start(module);
         info!("Server started at http://{}", address);
 
-        handle.stopped().await;
-
-        Ok(())
+        Ok(handle)
     }
 }
 
@@ -466,10 +471,10 @@ static ref METHODS: Vec<&'static str> = vec![
 }
 
 fn register_method<F, R>(
-    module: &mut RpcModule<RwLock<NodeHelper>>,
+    module: &mut RpcModule<Arc<RwLock<NodeHelper>>>,
     method_name: &'static str,
     callback: F,
-) -> Result<(), anyhow::Error>
+) -> Result<(), color_eyre::eyre::Error>
 where
     R: jsonrpsee::IntoResponse + serde::Serialize + std::fmt::Debug + Clone + 'static,
     F: Fn(jsonrpsee::types::Params, &RwLock<NodeHelper>) -> Result<R, ErrorObjectOwned>

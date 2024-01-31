@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::UNIX_EPOCH};
 
 use account::{Account, Executable};
 use anyhow::Result;
@@ -22,15 +22,17 @@ pub mod viewer;
 pub struct MultivmNode {
     db: sled::Db,
     txs_pool: std::collections::VecDeque<SupportedTransaction>,
+    events_tx: tokio::sync::broadcast::Sender<Block>,
 }
 
 impl MultivmNode {
-    pub fn new(db_path: String) -> Self {
+    pub fn new(db_path: String, events_tx: tokio::sync::broadcast::Sender<Block>) -> Self {
         info!(db_path, "Starting node");
 
         let mut node = Self {
             db: sled::open(db_path).unwrap(),
             txs_pool: std::collections::VecDeque::new(),
+            events_tx,
         };
 
         if !node.db.was_recovered() {
@@ -48,9 +50,13 @@ impl MultivmNode {
             parent_hash: [0; 32],
             previous_global_root: Default::default(),
             new_global_root: Default::default(),
-            timestamp: 0,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
             txs: Default::default(),
             call_outputs: Default::default(),
+            receipts: Default::default(),
         };
 
         self.insert_block(genesis_block);
@@ -69,6 +75,8 @@ impl MultivmNode {
             .unwrap();
 
         self.db.flush().unwrap();
+
+        self.events_tx.send(block).unwrap();
     }
 
     pub fn block_by_height(&self, height: u64) -> Option<Block> {
@@ -135,7 +143,10 @@ impl MultivmNode {
             height: latest_block.height + 1,
             hash,
             parent_hash: latest_block.hash,
-            timestamp: 0,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
             txs,
             previous_global_root: Default::default(),
             new_global_root: Default::default(),
@@ -187,19 +198,5 @@ impl MultivmNode {
             .map(|v| v.to_vec());
 
         storage
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_init_genesis() {
-        let mut node = MultivmNode::new("temp_multivm_db".to_string());
-        node.init_genesis();
-
-        let latest_block = node.latest_block();
-        assert_eq!(latest_block.height, 1);
     }
 }

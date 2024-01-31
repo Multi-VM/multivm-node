@@ -375,7 +375,7 @@ fn contract_call(contract_id: AccountId, call: ContractCall) {
 
 mod account_management {
     use borsh::{BorshDeserialize, BorshSerialize};
-    use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId, SolanaAddress};
+    use multivm_primitives::{AccountId, EvmAddress, MultiVmAccountId, SolanaAddress, SystemEvent};
 
     use crate::system_env;
 
@@ -503,14 +503,14 @@ mod account_management {
         .is_some()
     }
 
-    /// Returns true if account exists
-    fn account_exists_by_internal_id(id: u128) -> bool {
-        account_by_internal_id(id).is_some()
-    }
-
     /// Registers account in the system, with alias mappings
     pub fn register_account(account: Account) {
         system_env::set_storage(format!("accounts.{}", account.internal_id), account.clone());
+        system_env::event_system(SystemEvent::AccountCreated(
+            account.evm_address.clone(),
+            account.multivm_account_id.clone(),
+            account.solana_address.clone().unwrap(),
+        ));
 
         account.multivm_account_id.map(|multivm_account_id| {
             if account_exists(&multivm_account_id.clone().into()) {
@@ -560,9 +560,28 @@ mod account_management {
 
     /// Updates existing account in the system
     pub fn update_account(account: Account) {
-        if !account_exists_by_internal_id(account.internal_id) {
-            panic!("Account update requires existing account");
+        let prev = account_by_internal_id(account.internal_id)
+            .expect("Account update requires existing account");
+
+        match (prev.executable, account.clone().executable) {
+            (None, Some(exec)) => {
+                let id = match exec {
+                    Executable::Evm() => account.evm_address.clone().into(),
+                    Executable::MultiVm(_) => account.multivm_account_id.clone().unwrap().into(),
+                    Executable::Solana(_) => account.solana_address.clone().unwrap().into(),
+                };
+                system_env::event_system(SystemEvent::ContractDeployed(id));
+            }
+            _ => {}
         }
+
+        if account.balance != prev.balance {
+            system_env::event_system(SystemEvent::BalanceChanged(
+                account.evm_address.clone().into(),
+                account.balance,
+            ));
+        }
+
         system_env::set_storage(format!("accounts.{}", account.internal_id), account);
     }
 

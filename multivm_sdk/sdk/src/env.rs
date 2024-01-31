@@ -9,7 +9,7 @@ use multivm_primitives::{
         GET_STORAGE_CALL, SET_STORAGE_CALL,
     },
     AccountId, Commitment, ContractCall, ContractCallContext, ContractError, Digest as HashDigest,
-    StorageKey,
+    Event, StorageKey,
 };
 
 pub fn setup_env(call: &ContractCallContext) {
@@ -30,6 +30,7 @@ struct Env {
     initial_storage_hashes: HashMap<StorageKey, HashDigest>,
     storage_cache: HashMap<StorageKey, (Vec<u8>, bool)>,
     cross_calls_hashes: Vec<(HashDigest, HashDigest)>,
+    events: Vec<Event>,
 }
 
 impl Env {
@@ -50,6 +51,7 @@ impl Env {
             initial_storage_hashes: Default::default(),
             storage_cache: Default::default(),
             cross_calls_hashes: Default::default(),
+            events: Default::default(),
         }
     }
 }
@@ -186,6 +188,7 @@ impl Env {
             initial_storage_hashes: _,
             storage_cache,
             cross_calls_hashes,
+            events,
         } = self;
 
         let response = borsh::to_vec(&output).expect("Expected to serialize");
@@ -204,11 +207,21 @@ impl Env {
             cross_calls_hashes: cross_calls_hashes,
             previous_account_root: Default::default(),
             new_account_root: Default::default(),
+            events,
         };
 
         risc0_zkvm::guest::env::commit_slice(
             &borsh::to_vec(&commitment).expect("Expected to serialize"),
         )
+    }
+
+    pub fn event<T: borsh::BorshSerialize>(&mut self, message: T) {
+        let message_bytes = borsh::to_vec(&message).expect("Expected to serialize");
+        self.event_raw(message_bytes)
+    }
+
+    pub fn event_raw(&mut self, message_bytes: Vec<u8>) {
+        self.events.push(Event::Contract(message_bytes))
     }
 
     pub fn abort(self, message: String) {
@@ -221,6 +234,7 @@ impl Env {
             initial_storage_hashes: _, // TODO: fix  storage
             storage_cache: _,
             cross_calls_hashes,
+            events,
         } = self;
 
         println!("panic: {}", message);
@@ -231,6 +245,7 @@ impl Env {
             cross_calls_hashes: cross_calls_hashes,
             previous_account_root: Default::default(),
             new_account_root: Default::default(),
+            events,
         };
 
         risc0_zkvm::guest::env::commit_slice(
@@ -307,6 +322,14 @@ pub fn set_storage_raw(key: String, storage_bytes: Vec<u8>) {
         .as_mut()
         .unwrap()
         .set_storage_raw(key, storage_bytes)
+}
+
+pub fn event<T: borsh::BorshSerialize>(message: T) {
+    ENV.lock().unwrap().as_mut().unwrap().event(message)
+}
+
+pub fn event_raw(message: Vec<u8>) {
+    ENV.lock().unwrap().as_mut().unwrap().event_raw(message)
 }
 
 pub fn commit<T: borsh::BorshSerialize>(output: T) {
