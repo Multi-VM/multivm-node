@@ -234,14 +234,14 @@ impl From<eth_primitive_types::H160> for EvmAddress {
     }
 }
 
-impl TryFrom<String> for EvmAddress {
-    type Error = anyhow::Error;
+impl FromStr for EvmAddress {
+    type Err = AddressParseError;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         let bytes = ethers_core::utils::hex::decode(value.replace("0x", ""))?;
         let arr: [u8; 20] = bytes
             .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid length"))?;
+            .map_err(|_| AddressParseError::InvalidLength)?;
 
         Ok(arr.into())
     }
@@ -302,14 +302,45 @@ impl From<[u8; 32]> for SolanaAddress {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AddressParseError {
+    InvalidLength,
+    Base58(bs58::decode::Error),
+    Hex(ethers_core::utils::hex::FromHexError),
+}
+
+impl std::error::Error for AddressParseError {}
+
+impl std::fmt::Display for AddressParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            Self::InvalidLength => write!(f, "invalid length"),
+            Self::Base58(e) => write!(f, "base58 error: {}", e),
+            Self::Hex(e) => write!(f, "hex error: {}", e),
+        }
+    }
+}
+
+impl From<bs58::decode::Error> for AddressParseError {
+    fn from(e: bs58::decode::Error) -> Self {
+        Self::Base58(e)
+    }
+}
+
+impl From<ethers_core::utils::hex::FromHexError> for AddressParseError {
+    fn from(e: ethers_core::utils::hex::FromHexError) -> Self {
+        Self::Hex(e)
+    }
+}
+
 impl FromStr for SolanaAddress {
-    type Err = anyhow::Error;
+    type Err = AddressParseError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let bytes = bs58::decode(value).into_vec()?;
         let arr: [u8; 32] = bytes
             .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid length"))?;
+            .map_err(|_| AddressParseError::InvalidLength)?;
 
         Ok(arr.into())
     }

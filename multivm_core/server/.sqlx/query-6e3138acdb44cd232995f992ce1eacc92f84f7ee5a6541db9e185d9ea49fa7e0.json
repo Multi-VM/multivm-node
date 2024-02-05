@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO blocks (number, hash, timestamp, txs_count)\n            VALUES (?, ?, ?, ?)\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6e3138acdb44cd232995f992ce1eacc92f84f7ee5a6541db9e185d9ea49fa7e0"
+}

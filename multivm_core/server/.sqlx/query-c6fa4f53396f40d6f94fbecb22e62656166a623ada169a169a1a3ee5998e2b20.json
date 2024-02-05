@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM events\n            WHERE receipt_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "receipt_id",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "index_in_receipt",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "message",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c6fa4f53396f40d6f94fbecb22e62656166a623ada169a169a1a3ee5998e2b20"
+}

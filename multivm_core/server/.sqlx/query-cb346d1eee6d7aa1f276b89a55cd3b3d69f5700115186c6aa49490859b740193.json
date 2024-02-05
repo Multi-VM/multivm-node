@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM blocks\n            ORDER BY number DESC\n            LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "number",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "hash",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "timestamp",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "txs_count",
+        "ordinal": 4,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cb346d1eee6d7aa1f276b89a55cd3b3d69f5700115186c6aa49490859b740193"
+}

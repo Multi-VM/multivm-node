@@ -12,7 +12,6 @@ multivm_runtime = { path = "../runtime" }
 multivm_primitives = { path = "../primitives" }
 playgrounds = { path = "../playgrounds" }
 
-#anyhow.workspace = true
 borsh.workspace = true
 
 tokio = { version = "1", features = ["full"] }

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO transactions (hash, block_id, signer_account_id, receiver_account_id, format, nonce)\n            VALUES (?, ?, ?, ?, ?, ?)\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "58be43c59d3c1536c6a36e1a5574183bcbd45f5253b50800922e2327d1e89983"
+}

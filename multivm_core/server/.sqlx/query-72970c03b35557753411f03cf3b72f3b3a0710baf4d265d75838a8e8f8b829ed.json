@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO receipts (\n                transaction_id,\n                parent_receipt_id,\n                index_in_transaction,\n                result,\n                response,\n                gas_used,\n                contract_account_id,\n                call_method,\n                call_args,\n                call_gas,\n                call_deposit\n            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "72970c03b35557753411f03cf3b72f3b3a0710baf4d265d75838a8e8f8b829ed"
+}

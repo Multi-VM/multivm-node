@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM transactions\n            WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "hash",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "block_id",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "signer_account_id",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "receiver_account_id",
+        "ordinal": 4,
+        "type_info": "Int64"
+      },
+      {
+        "name": "format",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "nonce",
+        "ordinal": 6,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d46ba3a6e07b8801e29e05600bb2e83ccc492ff18cab2fa97390ae73eec5bfc3"
+}

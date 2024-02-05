@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE accounts\n            SET native_balance = ?, modified_at_block_id = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "12898f4604feb544b5e49bcf1f925fb21db38a580f3c45c7b21bccdec6744c6e"
+}

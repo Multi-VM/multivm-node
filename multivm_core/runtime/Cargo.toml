@@ -13,14 +13,14 @@ cuda = ["risc0-zkvm/cuda"]
 multivm_primitives = { path = "../primitives" }
 meta_contracts = { path = "../meta_contracts" }
 
-anyhow.workspace = true
 borsh.workspace = true
 
 risc0-zkvm = { version = "0.19.0", features = ["prove"] }
 
 serde = { version = "1.0.171", features = ["derive"] }
-tracing = "0.1.36"
 eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
 hex = "0.4.3"
 sled = "0.34.7"
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1.40"
+color-eyre = "0.6.2"

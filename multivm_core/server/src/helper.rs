@@ -1,8 +1,13 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use color_eyre::{eyre::eyre, Result};
 use rand::rngs::OsRng;
+use tokio::task::JoinHandle;
+use tracing::instrument;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use multivm_primitives::{
     k256::ecdsa::SigningKey, AccountId, Attachments, Block, ContractCall, ContractCallContext,
@@ -17,12 +22,44 @@ pub struct NodeHelper {
     keys: HashMap<AccountId, SigningKey>,
 }
 
+pub fn start(helper: Arc<RwLock<NodeHelper>>) -> JoinHandle<Result<()>> {
+    let normal_block_time = tokio::time::Duration::from_secs(2);
+    let empty_block_time = tokio::time::Duration::from_secs(30);
+
+    let mut check_interval = tokio::time::interval(normal_block_time);
+    let mut last_block = tokio::time::Instant::now();
+
+    let node_handle = tokio::spawn(async move {
+        loop {
+            check_interval.tick().await;
+            {
+                let mut helper = helper.write().unwrap();
+                let txs = helper.node.txs_count();
+                if txs == 0 {
+                    if last_block.elapsed() < empty_block_time {
+                        continue;
+                    }
+                }
+
+                helper.node.produce_block(true)?;
+                last_block = tokio::time::Instant::now();
+            }
+        }
+    });
+
+    node_handle
+}
+
 impl NodeHelper {
     fn super_account_id() -> MultiVmAccountId {
         MultiVmAccountId::try_from("super.multivm").unwrap()
     }
 
-    pub fn new(db_path: Option<String>, events_tx: tokio::sync::broadcast::Sender<Block>) -> Self {
+    #[instrument(skip(events_tx))]
+    pub fn new(
+        db_path: Option<String>,
+        events_tx: tokio::sync::broadcast::Sender<Block>,
+    ) -> Result<Self> {
         let db_path = db_path.unwrap_or_else(|| {
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -35,7 +72,7 @@ impl NodeHelper {
         });
 
         let mut helper = Self {
-            node: multivm_runtime::MultivmNode::new(db_path, events_tx),
+            node: multivm_runtime::MultivmNode::new(db_path, events_tx)?,
             keys: Default::default(),
         };
 
@@ -48,23 +85,24 @@ impl NodeHelper {
             .keys
             .insert(Self::super_account_id().into(), super_sk);
 
-        let super_account = helper.account(&Self::super_account_id().into());
+        let super_account = helper.account(&Self::super_account_id().into())?;
         match super_account {
             None => {
-                helper.create_super_account_now();
+                helper.create_super_account_now()?;
             }
             _ => {}
         }
-        helper
+
+        Ok(helper)
     }
 
     const SUPER_ACCOUNT_SK: &'static str =
         "4146c7e323d0ddae7baebd8e0dccbee723c9795c904d004e43a33e17adc8aa2e";
 
-    fn create_super_account_now(&mut self) {
+    fn create_super_account_now(&mut self) -> Result<()> {
         let account_id = Self::super_account_id();
 
-        let latest_block = self.node.latest_block();
+        let latest_block = self.node.latest_block()?;
         let sk = self.keys.get(&account_id.into()).unwrap();
         let address: EvmAddress = (*sk.verifying_key()).into();
 
@@ -90,14 +128,16 @@ impl NodeHelper {
 
         self.node.add_tx(tx.into());
         // self.produce_block(true);
+
+        Ok(())
     }
 
-    pub fn create_account(&mut self, multivm_account_id: &MultiVmAccountId) -> Digest {
+    pub fn create_account(&mut self, multivm_account_id: &MultiVmAccountId) -> Result<Digest> {
         let mut csprng = OsRng;
         let sk = multivm_primitives::k256::ecdsa::SigningKey::random(&mut csprng);
         self.keys
             .insert(multivm_account_id.clone().into(), sk.clone());
-        let latest_block = self.node.latest_block();
+        let latest_block = self.node.latest_block()?;
         let tx = create_account_tx(
             &latest_block,
             multivm_account_id.clone(),
@@ -110,15 +150,15 @@ impl NodeHelper {
 
         self.node.add_tx(tx.into());
 
-        tx_hash
+        Ok(tx_hash)
     }
 
     pub fn create_evm_account(
         &mut self,
         multivm_account_id: &MultiVmAccountId,
         address: EvmAddress,
-    ) -> EvmAddress {
-        let latest_block = self.node.latest_block();
+    ) -> Result<EvmAddress> {
+        let latest_block = self.node.latest_block()?;
 
         let tx = create_account_tx(
             &latest_block,
@@ -131,7 +171,7 @@ impl NodeHelper {
 
         self.node.add_tx(tx.into());
 
-        address
+        Ok(address)
     }
 
     pub fn create_contract(
@@ -139,11 +179,11 @@ impl NodeHelper {
         multivm_contract_id: &MultiVmAccountId,
         contract_type: String,
         code: Vec<u8>,
-    ) -> (Digest, Digest) {
-        (
-            self.create_account(multivm_contract_id),
-            self.deploy_contract(multivm_contract_id, contract_type, code),
-        )
+    ) -> Result<(Digest, Digest)> {
+        Ok((
+            self.create_account(multivm_contract_id)?,
+            self.deploy_contract(multivm_contract_id, contract_type, code)?,
+        ))
     }
 
     pub fn deploy_contract(
@@ -151,9 +191,9 @@ impl NodeHelper {
         multivm_contract_id: &MultiVmAccountId,
         contract_type: String,
         code: Vec<u8>,
-    ) -> Digest {
+    ) -> Result<Digest> {
         let key = self.keys.get(&multivm_contract_id.clone().into()).unwrap();
-        self.deploy_contract_with_key(multivm_contract_id, contract_type, code, key.clone())
+        Ok(self.deploy_contract_with_key(multivm_contract_id, contract_type, code, key.clone())?)
     }
 
     pub fn deploy_contract_with_key(
@@ -162,8 +202,8 @@ impl NodeHelper {
         contract_type: String,
         code: Vec<u8>,
         key: SigningKey,
-    ) -> Digest {
-        let latest_block = self.node.latest_block();
+    ) -> Result<Digest> {
+        let latest_block = self.node.latest_block()?;
         self.keys
             .insert(multivm_contract_id.clone().into(), key.clone());
         let (tx, attachs) = deploy_contract_tx(
@@ -177,7 +217,7 @@ impl NodeHelper {
 
         self.node.add_tx(tx.into());
 
-        tx_hash
+        Ok(tx_hash)
     }
 
     pub fn call_contract(
@@ -185,8 +225,8 @@ impl NodeHelper {
         signer_id: &AccountId,
         contract_id: &AccountId,
         call: ContractCall,
-    ) -> Digest {
-        let latest_block = self.node.latest_block();
+    ) -> Result<Digest> {
+        let latest_block = self.node.latest_block()?;
 
         let tx = multivm_primitives::TransactionBuilder::new(
             contract_id.clone(),
@@ -200,15 +240,15 @@ impl NodeHelper {
         let tx = SignedTransaction::new(tx, self.keys.get(signer_id).unwrap());
         self.node.add_tx(SupportedTransaction::MultiVm(tx.into()));
 
-        tx_hash
+        Ok(tx_hash)
     }
 
-    pub fn produce_block(&mut self, skip_proof: bool) -> Block {
-        self.node.produce_block(skip_proof)
+    pub fn produce_block(&mut self, skip_proof: bool) -> Result<Block> {
+        Ok(self.node.produce_block(skip_proof)?)
     }
 
-    pub fn account(&self, account_id: &AccountId) -> Option<Account> {
-        self.node.account_info(account_id)
+    pub fn account(&self, account_id: &AccountId) -> Result<Option<Account>> {
+        Ok(self.node.account_info(account_id)?)
     }
 
     pub fn view(&self, contract_id: &AccountId, call: ContractCall) -> Result<ContractResponse> {

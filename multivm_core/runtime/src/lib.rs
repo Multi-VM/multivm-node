@@ -1,14 +1,14 @@
 use std::{collections::HashMap, time::UNIX_EPOCH};
 
 use account::{Account, Executable};
-use anyhow::Result;
 use block::UnprovedBlock;
 use bootstraper::Bootstraper;
 use borsh::BorshSerialize;
+use color_eyre::{eyre::eyre, Result};
 use multivm_primitives::{
     AccountId, Block, ContractResponse, EnvironmentContext, SupportedTransaction,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 use viewer::{SupportedView, Viewer};
 
 pub mod account;
@@ -26,23 +26,25 @@ pub struct MultivmNode {
 }
 
 impl MultivmNode {
-    pub fn new(db_path: String, events_tx: tokio::sync::broadcast::Sender<Block>) -> Self {
+    #[instrument(skip(events_tx))]
+    pub fn new(db_path: String, events_tx: tokio::sync::broadcast::Sender<Block>) -> Result<Self> {
         info!(db_path, "Starting node");
 
         let mut node = Self {
-            db: sled::open(db_path).unwrap(),
+            db: sled::open(db_path)?,
             txs_pool: std::collections::VecDeque::new(),
             events_tx,
         };
 
         if !node.db.was_recovered() {
-            node.init_genesis();
+            node.init_genesis()?;
         }
 
-        node
+        Ok(node)
     }
 
-    pub fn init_genesis(&mut self) {
+    #[instrument(skip(self))]
+    pub fn init_genesis(&mut self) -> Result<()> {
         info!("Initializing genesis block");
         let genesis_block = Block {
             height: 0,
@@ -59,65 +61,77 @@ impl MultivmNode {
             receipts: Default::default(),
         };
 
-        self.insert_block(genesis_block);
+        self.insert_block(genesis_block)?;
+
+        Ok(())
     }
 
-    fn insert_block(&mut self, block: Block) {
+    #[instrument(skip(self))]
+    fn insert_block(&mut self, block: Block) -> Result<()> {
         self.db
-            .insert(
-                format!("block_{}", block.height),
-                borsh::to_vec(&block).unwrap(),
-            )
-            .unwrap();
+            .insert(format!("block_{}", block.height), borsh::to_vec(&block)?)?;
 
-        self.db
-            .insert(b"latest_block", borsh::to_vec(&block).unwrap())
-            .unwrap();
+        self.db.insert(b"latest_block", borsh::to_vec(&block)?)?;
 
-        self.db.flush().unwrap();
+        self.db.flush()?;
 
-        self.events_tx.send(block).unwrap();
+        self.events_tx.send(block)?;
+
+        Ok(())
     }
 
-    pub fn block_by_height(&self, height: u64) -> Option<Block> {
+    #[instrument(skip(self))]
+    pub fn block_by_height(&self, height: u64) -> Result<Option<Block>> {
         let block = self
             .db
-            .get(format!("block_{}", height))
-            .unwrap()
-            .map(|bytes| borsh::from_slice(&mut bytes.to_vec()).unwrap());
+            .get(format!("block_{}", height))?
+            .map(|bytes| borsh::from_slice(&mut bytes.to_vec()))
+            .transpose()?;
 
-        block
+        Ok(block)
     }
 
-    pub fn latest_block(&self) -> Block {
-        let mut latest_block_bytes = self.db.get(b"latest_block").unwrap().unwrap().to_vec();
-        let latest_block: Block = borsh::from_slice(&mut latest_block_bytes).unwrap();
+    #[instrument(skip(self))]
+    pub fn latest_block(&self) -> Result<Block> {
+        let mut latest_block_bytes = self
+            .db
+            .get(b"latest_block")?
+            .ok_or_else(|| eyre!("latest block not found"))?
+            .to_vec();
+        let latest_block: Block = borsh::from_slice(&mut latest_block_bytes)?;
         debug!(height = latest_block.height, "Latest block in runtime");
 
-        latest_block
+        Ok(latest_block)
     }
 
     pub fn add_tx(&mut self, tx: SupportedTransaction) {
         self.txs_pool.push_back(tx);
     }
 
-    fn environment(&self) -> EnvironmentContext {
-        EnvironmentContext {
-            block_height: self.latest_block().height + 1,
-        }
+    #[instrument(skip(self))]
+    fn environment(&self) -> Result<EnvironmentContext> {
+        Ok(EnvironmentContext {
+            block_height: self.latest_block()?.height + 1,
+        })
     }
 
-    pub fn produce_block(&mut self, skip_proof: bool) -> Block {
-        let latest_block = self.latest_block();
+    pub fn txs_count(&self) -> usize {
+        self.txs_pool.len()
+    }
+
+    #[instrument(skip(self))]
+    pub fn produce_block(&mut self, skip_proof: bool) -> Result<Block> {
+        let latest_block = self.latest_block()?;
         info!(height = latest_block.height + 1, "Creating new block");
         let start: std::time::Instant = std::time::Instant::now();
         // self.txs_pool = Default::default();
+        let env = self.environment()?;
         let (txs, execution_outcomes): (Vec<_>, Vec<_>) = self
             .txs_pool
             .iter()
             .map(|tx| {
                 let outcome =
-                    Bootstraper::new(self.db.clone(), tx.clone(), tx.signer(), self.environment())
+                    Bootstraper::new(self.db.clone(), tx.clone(), tx.signer(), env.clone())
                         .bootstrap();
                 (tx.clone(), outcome)
             })
@@ -156,28 +170,41 @@ impl MultivmNode {
         let block = unproved_block.prove(skip_proof);
         info!(time = ?start.elapsed(), height = block.height, txs_count = block.txs.len(), "Block created");
         debug!(height = ?block.height, txs = ?block.txs.iter().map(|tx| hex::encode(tx.hash())).collect::<Vec<_>>(), "Block created");
-        self.insert_block(block.clone());
-        block
+        self.insert_block(block.clone())?;
+
+        Ok(block)
     }
 
-    pub fn account_info(&self, account_id: &AccountId) -> Option<Account> {
-        Viewer::account_info(account_id, self.db.clone())
+    #[instrument(skip(self))]
+    pub fn account_info(&self, account_id: &AccountId) -> Result<Option<Account>> {
+        Ok(Viewer::account_info(account_id, self.db.clone())?)
     }
 
-    pub fn system_view<T: BorshSerialize>(&self, method: String, args: &T) -> ContractResponse {
+    #[instrument(skip(self, args))]
+    pub fn system_view<T: BorshSerialize>(
+        &self,
+        method: String,
+        args: &T,
+    ) -> Result<ContractResponse> {
         Viewer::view_system_meta_contract(method, args, self.db.clone())
     }
 
+    #[instrument(skip(self))]
     pub fn contract_view(&self, view: SupportedView) -> Result<ContractResponse> {
         Viewer::new(view, self.db.clone()).view()
     }
 
-    pub fn account_raw_storage(&self, account_id: AccountId, key: String) -> Option<Vec<u8>> {
+    #[instrument(skip(self))]
+    pub fn account_raw_storage(
+        &self,
+        account_id: AccountId,
+        key: String,
+    ) -> Result<Option<Vec<u8>>> {
         let storage_location = if account_id == AccountId::system_meta_contract() {
             AccountId::system_meta_contract()
         } else {
-            let contract = Viewer::account_info(&account_id, self.db.clone())
-                .expect("Loading storage for non-existent contract");
+            let contract = Viewer::account_info(&account_id, self.db.clone())?
+                .ok_or_else(|| eyre!("loading storage for non-existent contract"))?;
 
             match contract.executable {
                 Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => contract
@@ -191,12 +218,8 @@ impl MultivmNode {
 
         let db_key = format!("committed_storage.{}.{}", storage_location, key);
 
-        let storage = self
-            .db
-            .get(db_key)
-            .expect("Failed to get storage from db")
-            .map(|v| v.to_vec());
+        let storage = self.db.get(db_key)?.map(|v| v.to_vec());
 
-        storage
+        Ok(storage)
     }
 }

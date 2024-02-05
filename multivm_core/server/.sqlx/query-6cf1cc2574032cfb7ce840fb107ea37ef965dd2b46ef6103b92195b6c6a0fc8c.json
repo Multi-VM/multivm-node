@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE accounts\n            SET executable_type = ?, modified_at_block_id = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "6cf1cc2574032cfb7ce840fb107ea37ef965dd2b46ef6103b92195b6c6a0fc8c"
+}

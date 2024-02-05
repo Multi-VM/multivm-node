@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM stats\n            ORDER BY timestamp DESC\n            LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "timestamp",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "block_id",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "total_txs",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "total_accounts",
+        "ordinal": 4,
+        "type_info": "Int64"
+      },
+      {
+        "name": "total_contracts",
+        "ordinal": 5,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bbc692a7868ebf69da74d2d2136c3fe7d043420ef172c45b0aaf18d04814128c"
+}

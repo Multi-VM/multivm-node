@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM accounts\n            WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "fvm_address",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "evm_address",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "svm_address",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at_block_id",
+        "ordinal": 4,
+        "type_info": "Int64"
+      },
+      {
+        "name": "modified_at_block_id",
+        "ordinal": 5,
+        "type_info": "Int64"
+      },
+      {
+        "name": "executable_type",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "native_balance",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b3dd1052e1f4c05a90d4348df2691971913adddafe222f37767fce406b889e54"
+}

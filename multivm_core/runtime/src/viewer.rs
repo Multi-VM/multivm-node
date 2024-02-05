@@ -1,6 +1,9 @@
-use anyhow::{Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use tracing::{debug, span, Level};
+use color_eyre::{
+    eyre::{bail, eyre},
+    Result,
+};
+use tracing::{debug, instrument, span, Level};
 
 use multivm_primitives::{
     syscalls::{GetStorageResponse, GET_STORAGE_CALL, SET_STORAGE_CALL},
@@ -51,17 +54,20 @@ impl Viewer {
         Self { view, db }
     }
 
-    pub fn account_info(account_id: &AccountId, db: sled::Db) -> Option<Account> {
-        let bytes =
-            Viewer::view_system_meta_contract("account_info".to_string(), account_id, db).unwrap();
-        borsh::from_slice(&bytes).unwrap()
+    #[instrument(skip(db))]
+    pub fn account_info(account_id: &AccountId, db: sled::Db) -> Result<Option<Account>> {
+        let bytes = Viewer::view_system_meta_contract("account_info".to_string(), account_id, db)?
+            .map_err(|err| eyre!("meta contract failed: {:?}", err))?;
+
+        Ok(borsh::from_slice(&bytes)?)
     }
 
+    #[instrument(skip(args, db), fields(method=?method))]
     pub fn view_system_meta_contract<T: BorshSerialize>(
         method: String,
         args: &T,
         db: sled::Db,
-    ) -> ContractResponse {
+    ) -> Result<ContractResponse> {
         let context = ContractCallContext {
             contract_id: AccountId::system_meta_contract(),
             contract_call: ContractCall::new(method, args, 100_000_000, 0),
@@ -71,7 +77,7 @@ impl Viewer {
         };
 
         let action = Action::View(SupportedView::MultiVm(context.clone()), context.environment);
-        let input_bytes = borsh::to_vec(&action).unwrap();
+        let input_bytes = borsh::to_vec(&action)?;
 
         let env = risc0_zkvm::ExecutorEnv::builder()
             .write_slice(&input_bytes)
@@ -79,7 +85,7 @@ impl Viewer {
             .io_callback(GET_STORAGE_CALL, callback_on_system_get_storage(db.clone()))
             .stdout(ContractLogger::new(AccountId::system_meta_contract()))
             .build()
-            .unwrap();
+            .map_err(|err| eyre!(Box::new(err)))?;
 
         let program = risc0_zkvm::Program::load_elf(
             &meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec(),
@@ -91,19 +97,20 @@ impl Viewer {
 
         let session = exec.execute(env, image).unwrap();
 
-        Commitment::try_from_bytes(session.journal.bytes.clone())
-            .expect("Corrupted journal")
-            .response
+        Ok(Commitment::try_from_bytes(session.journal.bytes.clone())
+            .map_err(|err| eyre!(Box::new(err)))?
+            .response)
     }
 
+    #[instrument(skip(self), fields(contract_id=?self.view.contract_id()))]
     pub fn view(self) -> Result<ContractResponse> {
         let contract_id = self.view.contract_id();
 
         debug!(contract_id=?contract_id, "Viewing contract");
 
         let (input_bytes, elf) = if contract_id != AccountId::system_meta_contract() {
-            let contract =
-                Viewer::account_info(&contract_id, self.db.clone()).context(contract_id.clone())?;
+            let contract = Viewer::account_info(&contract_id, self.db.clone())?
+                .ok_or_else(|| eyre!("contract not found in the database"))?;
 
             match contract.executable {
                 Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => {
@@ -115,7 +122,7 @@ impl Viewer {
                                 self.load_contract(&contract.multivm_account_id.unwrap())?,
                             )
                         }
-                        _ => anyhow::bail!("Non-MultiVM view for MultiVM contract"),
+                        _ => bail!("Non-MultiVM view for MultiVM contract"),
                     }
                 }
                 Some(Executable::Evm()) => {
@@ -125,7 +132,7 @@ impl Viewer {
                     ))?;
                     (action, meta_contracts::SYSTEM_META_CONTRACT_ELF.to_vec())
                 }
-                None => anyhow::bail!("Viewing non-executable account"),
+                None => bail!("Viewing non-executable account"),
             }
         } else {
             (
@@ -143,17 +150,20 @@ impl Viewer {
             .io_callback(GET_STORAGE_CALL, self.callback_on_get_storage())
             .io_callback(SET_STORAGE_CALL, self.callback_on_set_storage())
             .stdout(ContractLogger::new(AccountId::system_meta_contract()))
-            .build()?;
+            .build()
+            .map_err(|err| eyre!(Box::new(err)))?;
 
-        let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY)?;
-        let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE)?;
+        let program =
+            risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY).map_err(|err| eyre!(Box::new(err)))?;
+        let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE)
+            .map_err(|err| eyre!(Box::new(err)))?;
         let exec = risc0_zkvm::default_executor();
 
-        let session = exec.execute(env, image)?;
+        let session = exec
+            .execute(env, image)
+            .map_err(|err| eyre!(Box::new(err)))?;
 
-        Ok(Commitment::try_from_bytes(session.journal.bytes.clone())
-            .context("Corrupted journal")?
-            .response)
+        Ok(Commitment::try_from_bytes(session.journal.bytes.clone())?.response)
     }
 
     fn load_contract(&self, contract_id: &MultiVmAccountId) -> Result<Vec<u8>> {
@@ -161,10 +171,9 @@ impl Viewer {
 
         let code = self
             .db
-            .get(db_key)
-            .context("Failed to get storage from db")?
+            .get(db_key)?
             .map(|v| v.to_vec())
-            .context("Contract not found")?;
+            .ok_or_else(|| eyre!("contract not found"))?;
 
         Ok(code)
     }
@@ -180,6 +189,7 @@ impl Viewer {
 
             let storage_location = if self.view.contract_id() != AccountId::system_meta_contract() {
                 let contract = Viewer::account_info(&self.view.contract_id(), self.db.clone())
+                    .unwrap()
                     .expect("Loading storage for non-existent contract");
 
                 let storage_location = match contract.executable {

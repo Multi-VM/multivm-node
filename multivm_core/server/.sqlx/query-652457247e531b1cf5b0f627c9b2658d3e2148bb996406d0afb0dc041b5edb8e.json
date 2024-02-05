@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO accounts (fvm_address, evm_address, svm_address, created_at_block_id, modified_at_block_id, executable_type, native_balance)\n            VALUES (?,?,?,?,?,?,?)\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "652457247e531b1cf5b0f627c9b2658d3e2148bb996406d0afb0dc041b5edb8e"
+}

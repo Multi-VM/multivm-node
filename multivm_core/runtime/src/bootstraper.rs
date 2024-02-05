@@ -1,7 +1,6 @@
-use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use risc0_zkvm::sha::{Impl as HashImpl, Sha256};
-use tracing::{debug, span, Level};
+use tracing::{debug, instrument, span, Level};
 
 use multivm_primitives::{
     syscalls::{
@@ -65,6 +64,7 @@ impl Bootstraper {
         }
     }
 
+    #[instrument(skip(self))]
     pub fn bootstrap(self) -> ExecutionOutcome {
         debug!(
             // tx_hash = utils::bytes_to_hex(self.signed_tx.transaction.hash().as_slice()),
@@ -161,7 +161,7 @@ impl Bootstraper {
 
             let outcome = Executor::new(call_context, self.db.clone())
                 .execute()
-                .context("Cross Contract Call failed")?;
+                .expect("Cross Contract Call failed");
 
             let commitment = borsh::to_vec(&outcome.commitment).unwrap();
 

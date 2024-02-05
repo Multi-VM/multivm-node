@@ -15,4 +15,3 @@ sha2 = "0.10"
 k256 = { version = "=0.13.1", features = ["arithmetic", "serde", "expose-field", "std", "ecdsa"], default_features = false }
 ethers-core = "2.0.10"
 bs58 = "0.5.0"
-anyhow = "1"

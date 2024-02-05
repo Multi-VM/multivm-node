@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM receipts\n            WHERE transaction_id = ? AND parent_receipt_id is NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "transaction_id",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "parent_receipt_id",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "index_in_transaction",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "result",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "response",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "gas_used",
+        "ordinal": 6,
+        "type_info": "Int64"
+      },
+      {
+        "name": "contract_account_id",
+        "ordinal": 7,
+        "type_info": "Int64"
+      },
+      {
+        "name": "call_method",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "call_args",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "call_gas",
+        "ordinal": 10,
+        "type_info": "Int64"
+      },
+      {
+        "name": "call_deposit",
+        "ordinal": 11,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5885c934f584acf81a9de97413ea83e897916d2b67410616e3168e624507182b"
+}

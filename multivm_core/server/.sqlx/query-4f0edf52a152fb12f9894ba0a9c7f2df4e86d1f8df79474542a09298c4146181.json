@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n            FROM blocks\n            WHERE number = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "number",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "hash",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "timestamp",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "txs_count",
+        "ordinal": 4,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4f0edf52a152fb12f9894ba0a9c7f2df4e86d1f8df79474542a09298c4146181"
+}

@@ -648,7 +648,6 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 name = "multivm_primitives"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "borsh",
  "bs58",
  "ethers-core",

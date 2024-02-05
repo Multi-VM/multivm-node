@@ -3121,7 +3121,6 @@ checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 name = "multivm_primitives"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "borsh",
  "bs58",
  "ethers-core",
@@ -3137,8 +3136,8 @@ dependencies = [
 name = "multivm_runtime"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "borsh",
+ "color-eyre",
  "hex",
  "meta_contracts",
  "multivm_primitives",

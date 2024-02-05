@@ -1,5 +1,7 @@
 #![no_main]
 
+use std::str::FromStr;
+
 use ethabi::ethereum_types::U256;
 use instruction::{AddLiquidityRequest, AddPoolRequest, SwapRequest};
 use num::integer::Roots;
@@ -153,8 +155,8 @@ pub fn add_pool(
         }
     }
 
-    let token0 = multivm_sdk::multivm_primitives::EvmAddress::try_from(request.token0).unwrap();
-    let token1 = multivm_sdk::multivm_primitives::EvmAddress::try_from(request.token1).unwrap();
+    let token0 = multivm_sdk::multivm_primitives::EvmAddress::from_str(&request.token0).unwrap();
+    let token1 = multivm_sdk::multivm_primitives::EvmAddress::from_str(&request.token1).unwrap();
 
     let abi = ethabi::Contract::load(ABI_BYTES).unwrap();
     let symbols_function = abi.function("symbol").unwrap();
@@ -343,7 +345,7 @@ pub fn add_liquidity(
             ])
             .unwrap();
         let token0_address =
-            multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token0.clone().address)
+            multivm_sdk::multivm_primitives::EvmAddress::from_str(&pool.token0.clone().address)
                 .unwrap();
         let commitment = multivm_sdk::env::cross_contract_call_raw(
             token0_address.clone().into(),
@@ -365,7 +367,7 @@ pub fn add_liquidity(
             ])
             .unwrap();
         let token1_address =
-            multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token1.clone().address)
+            multivm_sdk::multivm_primitives::EvmAddress::from_str(&pool.token1.clone().address)
                 .unwrap();
         let commitment = multivm_sdk::env::cross_contract_call_raw(
             token1_address.clone().into(),
@@ -478,7 +480,7 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
             ])
             .unwrap();
         let token0_address =
-            multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token0.clone().address)
+            multivm_sdk::multivm_primitives::EvmAddress::from_str(&pool.token0.clone().address)
                 .unwrap();
         let commitment = multivm_sdk::env::cross_contract_call_raw(
             token0_address.clone().into(),
@@ -499,7 +501,7 @@ pub fn remove_liquidity(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
             ])
             .unwrap();
         let token1_address =
-            multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token1.clone().address)
+            multivm_sdk::multivm_primitives::EvmAddress::from_str(&pool.token1.clone().address)
                 .unwrap();
         let commitment = multivm_sdk::env::cross_contract_call_raw(
             token1_address.clone().into(),
@@ -581,9 +583,11 @@ pub fn swap(program_id: &Pubkey, accounts: &[AccountInfo], request: SwapRequest)
             .unwrap()
     };
     let token0_address =
-        multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token0.clone().address).unwrap();
+        multivm_sdk::multivm_primitives::EvmAddress::from_str(&pool.token0.clone().address)
+            .unwrap();
     let token1_address =
-        multivm_sdk::multivm_primitives::EvmAddress::try_from(pool.token1.clone().address).unwrap();
+        multivm_sdk::multivm_primitives::EvmAddress::from_str(&pool.token1.clone().address)
+            .unwrap();
 
     let (reserve_in, reserve_out, amount_in, token_in, token_out) = if request.amount0_in > 0 {
         (

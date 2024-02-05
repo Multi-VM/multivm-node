@@ -60,6 +60,7 @@ impl JsonRpcServer {
                     .map_err(internal_error)?
                     .node
                     .latest_block()
+                    .map_err(internal_error)?
                     .height
             );
             Ok(height)
@@ -73,7 +74,8 @@ impl JsonRpcServer {
             let account = ctx
                 .read()
                 .map_err(internal_error)?
-                .account(&AccountId::Evm(address.into()));
+                .account(&AccountId::Evm(address.into()))
+                .map_err(internal_error)?;
             let balance = account.map(|a| a.balance).unwrap_or_default();
             Ok(balance.to_0x())
         })?;
@@ -81,13 +83,14 @@ impl JsonRpcServer {
             let block_request = params.sequence().next::<String>().map_err(invalid_params)?;
             let helper = ctx.read().map_err(internal_error)?;
             let height = if block_request == "latest" {
-                helper.node.latest_block().height
+                helper.node.latest_block().map_err(internal_error)?.height
             } else {
                 block_request.from_0x()
             };
             let output = helper
                 .node
                 .block_by_height(height)
+                .map_err(internal_error)?
                 .map(|block| EthBlockOutput::from(&block));
             Ok(json!(output))
         })?;
@@ -95,11 +98,11 @@ impl JsonRpcServer {
             let block_request = params.sequence().next::<String>().map_err(invalid_params)?;
             let helper = ctx.read().map_err(internal_error)?;
             let _height = if block_request == "latest" {
-                helper.node.latest_block().height
+                helper.node.latest_block().map_err(internal_error)?.height
             } else {
                 block_request.from_0x()
             };
-            let block = helper.node.latest_block();
+            let block = helper.node.latest_block().map_err(internal_error)?;
             let output = EthBlockOutput::from(&block);
             Ok(json!(output))
         })?;
@@ -109,10 +112,11 @@ impl JsonRpcServer {
             move |params, ctx| {
                 let hash = params.sequence().next::<String>().map_err(invalid_params)?;
                 let helper = ctx.read().map_err(internal_error)?;
-                for height in 1..=helper.node.latest_block().height {
+                for height in 1..=helper.node.latest_block().map_err(internal_error)?.height {
                     let block = helper
                         .node
                         .block_by_height(height)
+                        .map_err(internal_error)?
                         .ok_or(internal_error("block not found"))?;
                     for tx in block.txs.clone() {
                         if tx.hash().to_0x() == hash {
@@ -179,14 +183,17 @@ impl JsonRpcServer {
             "eth_getTransactionCount",
             move |params, ctx| {
                 let address = params.sequence().next::<String>().map_err(invalid_params)?;
-                let account_id: AccountId = EvmAddress::try_from(address)
+                let account_id: AccountId = EvmAddress::from_str(&address)
                     .map(|a| a.into())
                     .map_err(invalid_params)?;
+
+                // TODOTODOTODO
 
                 let nonce = ctx
                     .read()
                     .map_err(internal_error)?
                     .account(&account_id)
+                    .map_err(internal_error)?
                     .map(|a| a.nonce)
                     .unwrap_or_default();
 
@@ -200,7 +207,9 @@ impl JsonRpcServer {
                 let hash: String = params.sequence().next().map_err(invalid_params)?;
                 let helper = ctx.read().map_err(internal_error)?;
 
-                for tx in helper.node.latest_block().txs {
+                let latest_block = helper.node.latest_block().map_err(internal_error)?;
+
+                for tx in latest_block.txs.iter() {
                     if tx.hash().to_0x() == hash {
                         match tx {
                             SupportedTransaction::MultiVm(_) => {
@@ -208,12 +217,8 @@ impl JsonRpcServer {
                             }
                             SupportedTransaction::Evm(tx) => {
                                 let (tx_request, sig) = tx.decode();
-                                let result = Some(EthTransaction::from(
-                                    tx_request,
-                                    sig,
-                                    hash,
-                                    helper.node.latest_block(),
-                                ));
+                                let result =
+                                    Some(EthTransaction::from(tx_request, sig, hash, latest_block));
                                 return Ok(result);
                             }
                             SupportedTransaction::Solana(_) => {
@@ -284,8 +289,13 @@ impl JsonRpcServer {
                 MultiVmAccountId::try_from(multivm_name.to_string()).map_err(invalid_params)?;
 
             let mut helper = ctx.write().map_err(internal_error)?;
-            if let None = helper.account(&multivm.clone().into()) {
-                helper.create_evm_account(&multivm, address.clone());
+            if let None = helper
+                .account(&multivm.clone().into())
+                .map_err(internal_error)?
+            {
+                helper
+                    .create_evm_account(&multivm, address.clone())
+                    .map_err(internal_error)?;
                 debug!(
                     multivm_id = ?multivm,
                     evm_address = ?address,
@@ -320,7 +330,9 @@ impl JsonRpcServer {
                 MultiVmAccountId::try_from(multivm_name.to_string()).map_err(invalid_params)?;
 
             let mut helper = ctx.write().map_err(internal_error)?;
-            helper.deploy_contract_with_key(&account_id, contract_type, bytecode, sk);
+            helper
+                .deploy_contract_with_key(&account_id, contract_type, bytecode, sk)
+                .map_err(internal_error)?;
             //helper.produce_block(true);
 
             Ok("0x0")
@@ -389,7 +401,11 @@ impl JsonRpcServer {
                 )
             };
 
-            let account = ctx.read().map_err(internal_error)?.account(&account_id);
+            let account = ctx
+                .read()
+                .map_err(internal_error)?
+                .account(&account_id)
+                .map_err(internal_error)?;
             Ok(json!(account))
         })?;
 
@@ -406,7 +422,8 @@ impl JsonRpcServer {
                 .read()
                 .map_err(internal_error)?
                 .node
-                .account_raw_storage(contract_address.into(), storage_address.to_string());
+                .account_raw_storage(contract_address.into(), storage_address.to_string())
+                .map_err(internal_error)?;
 
             Ok(json!(data))
         })?;
@@ -474,7 +491,7 @@ fn register_method<F, R>(
     module: &mut RpcModule<Arc<RwLock<NodeHelper>>>,
     method_name: &'static str,
     callback: F,
-) -> Result<(), color_eyre::eyre::Error>
+) -> Result<()>
 where
     R: jsonrpsee::IntoResponse + serde::Serialize + std::fmt::Debug + Clone + 'static,
     F: Fn(jsonrpsee::types::Params, &RwLock<NodeHelper>) -> Result<R, ErrorObjectOwned>

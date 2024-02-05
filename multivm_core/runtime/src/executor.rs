@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
 use borsh::BorshDeserialize;
+use color_eyre::{eyre::eyre, Result};
 use risc0_zkvm::sha::rust_crypto::{Digest, Sha256};
-use tracing::{debug, info, span, Level};
+use tracing::{debug, info, instrument, span, Level};
 
 use multivm_primitives::{
     syscalls::{
@@ -35,19 +35,16 @@ impl Executor {
         }
     }
 
+    #[instrument(skip(self))]
     pub fn execute(self) -> Result<ExecutionOutcome> {
         let contract_id = self.context.contract_id.clone();
         let (call_bytes, elf) = if contract_id != AccountId::system_meta_contract() {
-            let contract = Viewer::account_info(&contract_id, self.db.clone())
-                .context(contract_id.clone())
-                .expect("Loading storage for non-existent contract");
+            let contract = Viewer::account_info(&contract_id, self.db.clone())?
+                .ok_or_else(|| eyre!("Loading storage for non-existent contract"))?;
 
             match contract.executable {
                 Some(Executable::MultiVm(_)) => {
-                    let elf = self
-                        .load_contract(contract_id.into())
-                        .context(format!("Load contract {:?}", self.context.contract_id))
-                        .unwrap();
+                    let elf = self.load_contract(contract_id.into())?;
                     (borsh::to_vec(&self.context).unwrap(), elf)
                 }
                 Some(Executable::Evm()) => {
@@ -58,10 +55,7 @@ impl Executor {
                     )
                 }
                 Some(Executable::Solana(_)) => {
-                    let elf = self
-                        .load_contract(contract.multivm_account_id.unwrap().into()) // TODO: use solana address
-                        .context(format!("Load contract {:?}", self.context.contract_id))
-                        .unwrap();
+                    let elf = self.load_contract(contract.multivm_account_id.unwrap().into())?; // TODO: use solana address
                     (borsh::to_vec(&self.context).unwrap(), elf)
                 }
                 None => unreachable!("Account is non-executable"),
@@ -135,7 +129,7 @@ impl Executor {
 
             let outcome = Executor::new(call_context, self.db.clone())
                 .execute()
-                .context("Cross Contract Call failed")?;
+                .expect("Cross Contract Call failed");
 
             let commitment = borsh::to_vec(&outcome.commitment).unwrap();
 
@@ -159,6 +153,7 @@ impl Executor {
                 AccountId::system_meta_contract()
             } else {
                 let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
+                    .unwrap()
                     .expect("Loading storage for non-existent contract");
 
                 match contract.executable {
@@ -214,7 +209,8 @@ impl Executor {
                 AccountId::system_meta_contract()
             } else {
                 let contract = Viewer::account_info(&self.context.contract_id, self.db.clone())
-                    .expect("Loading storage for non-existent contract");
+                    .expect("Loading storage for non-existent contract")
+                    .unwrap();
 
                 match contract.executable {
                     Some(Executable::MultiVm(_)) | Some(Executable::Solana(_)) => contract

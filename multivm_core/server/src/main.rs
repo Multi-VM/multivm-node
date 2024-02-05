@@ -8,7 +8,7 @@ use explorer::{
     config::ExplorerConfig, config::GraphqlConfig as ExplorerGraphqlConfig,
     config::StorageConfig as ExplorerStorageConfige,
 };
-use helper::NodeHelper;
+use helper::{start, NodeHelper};
 use rpc::JsonRpcServer;
 
 mod explorer;
@@ -68,14 +68,14 @@ async fn main() -> Result<()> {
     let (events_tx, events_rx) = tokio::sync::broadcast::channel(32);
 
     let json_rpc_server = JsonRpcServer::new();
-    let helper = Arc::new(RwLock::new(NodeHelper::new(db_path, events_tx)));
+    let helper = Arc::new(RwLock::new(NodeHelper::new(db_path, events_tx)?));
 
     let explorer_config = ExplorerConfig {
         storage: ExplorerStorageConfige {
             sqlite_db_path: explorer_db_path,
         },
         graphql: ExplorerGraphqlConfig {
-            bind_address: format!("0.0.0.0:{}", explorer_port).parse().unwrap(),
+            bind_address: format!("0.0.0.0:{}", explorer_port).parse()?,
             depth_limit: 100,
             complexity_limit: 1000,
         },
@@ -83,14 +83,7 @@ async fn main() -> Result<()> {
 
     let (indexer_handle, graphql_handle) = explorer::start(explorer_config, events_rx).await?;
 
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
-    let h = helper.clone();
-    let node_handle = tokio::spawn(async move {
-        loop {
-            interval.tick().await;
-            h.write().unwrap().produce_block(true);
-        }
-    });
+    let node_handle = helper::start(helper.clone());
 
     let json_rpc_handle = json_rpc_server.start(helper, port).await?;
 

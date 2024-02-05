@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO stats (timestamp, block_id, total_txs, total_accounts, total_contracts)\n            VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "811e20e07c01670a34fc18df094ce1440a37b145a585c94b6d85b33e49b98b93"
+}
