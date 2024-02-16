@@ -13,6 +13,7 @@
     "deploy:amm-rust": "hardhat run ./scripts/deploy-amm-rust.ts --network multivm",
     "deploy:demo": "hardhat run ./scripts/deploy-demo.ts --network multivm",
     "deploy:amm-solana": "hardhat run ./scripts/deploy-amm-solana.ts --network multivm",
+    "logs": "hardhat run ./scripts/logs.ts --network multivm",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
