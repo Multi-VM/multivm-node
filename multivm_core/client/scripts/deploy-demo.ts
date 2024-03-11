@@ -40,18 +40,18 @@ async function main() {
 
   // Tokens
   console.info("\nDeploy 3 tokens...");
-  const token1 = await deployTokenContract({ name: "Token 1", symbol: "TKN1", signer: owner });
-  const token2 = await deployTokenContract({ name: "Token 2", symbol: "TKN2", signer: owner });
-  const token3 = await deployTokenContract({ name: "Token 3", symbol: "TKN3", signer: owner });
+  const token1 = await deployTokenContract({ name: "Alpha", symbol: "ALPHA", signer: owner });
+  const token2 = await deployTokenContract({ name: "Bravo", symbol: "BRAVO", signer: owner });
+  const token3 = await deployTokenContract({ name: "Charlie", symbol: "CHARLIE", signer: owner });
 
   const token1Address = await token1.getAddress();
   const token2Address = await token2.getAddress();
   const token3Address = await token3.getAddress();
 
   console.table([
-    { name: "TKN1", address: token1Address },
-    { name: "TKN2", address: token2Address },
-    { name: "TKN3", address: token3Address },
+    { name: "Alpha", address: token1Address },
+    { name: "Bravo", address: token2Address },
+    { name: "Charlie", address: token3Address },
   ]);
 
   // Rust
